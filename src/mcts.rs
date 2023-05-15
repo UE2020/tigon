@@ -115,11 +115,17 @@ impl MCTSTree {
             .expanded()
         {
             let node = self.nodes.get(curr_node).expect("node not found");
-            let child = node.children.as_ref().unwrap().iter().max_by(|a, b| {
-                self.ucb(curr_node, a.0, C_PUCT)
-                    .partial_cmp(&self.ucb(curr_node, b.0, C_PUCT))
-                    .unwrap_or(std::cmp::Ordering::Equal)
-            }).unwrap();
+            let child = node
+                .children
+                .as_ref()
+                .unwrap()
+                .iter()
+                .max_by(|a, b| {
+                    self.ucb(curr_node, a.0, C_PUCT)
+                        .partial_cmp(&self.ucb(curr_node, b.0, C_PUCT))
+                        .unwrap_or(std::cmp::Ordering::Equal)
+                })
+                .unwrap();
 
             search_path.push(child.0);
             curr_node = child.0;
