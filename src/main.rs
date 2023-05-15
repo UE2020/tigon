@@ -7,12 +7,9 @@ type Mlp = (
     (Linear<32, 2>, Tanh),
 );
 
-
 fn main() {
-	let dev = AutoDevice::default();
+    let dev = AutoDevice::default();
     let mut mlp = dev.build_module::<Mlp, f32>();
 
     let mut grads = mlp.alloc_grads();
-
-	
 }
