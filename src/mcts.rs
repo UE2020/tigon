@@ -12,7 +12,7 @@ use std::io::BufWriter;
 use std::process::*;
 use vampirc_uci::{parse_one, UciMessage, UciPiece, UciTimeControl};
 
-pub const C_PUCT: f32 = 3.1;
+pub const C_PUCT: f32 = 1.2;
 
 fn turn_to_side(color: Color) -> i8 {
     match color {
@@ -59,7 +59,7 @@ impl<B> Node<B> {
 pub struct MCTSTree<B: Position + Clone + Eq + PartialEq + Hash> {
     nodes: HashMap<B, Node<B>>,
     root: B,
-	depth: u8,
+    depth: u8,
 }
 
 impl<B: Position + Clone + Eq + PartialEq + Hash> MCTSTree<B> {
@@ -67,7 +67,7 @@ impl<B: Position + Clone + Eq + PartialEq + Hash> MCTSTree<B> {
         let mut tree = Self {
             root: root_board.clone(),
             nodes: HashMap::new(),
-			depth: 0,
+            depth: 0,
         };
 
         tree.set_root(root_board, child);
@@ -83,7 +83,7 @@ impl<B: Position + Clone + Eq + PartialEq + Hash> MCTSTree<B> {
             );
         }
         self.root = root_board.clone();
-		self.depth = 0;
+        self.depth = 0;
 
         let value = self.expand_node(root_board, |board| {
             use vampirc_uci::UciInfoAttribute;
@@ -100,7 +100,7 @@ impl<B: Position + Clone + Eq + PartialEq + Hash> MCTSTree<B> {
                 )
                 .expect("Failed to write to stdin");
             stdin
-                .write_all("go depth 2\n".as_bytes())
+                .write_all("go depth 1\n".as_bytes())
                 .expect("Failed to write to stdin");
 
             let mut last_value = 0.0;
@@ -167,9 +167,9 @@ impl<B: Position + Clone + Eq + PartialEq + Hash> MCTSTree<B> {
             let mut distr = vec![];
             let mut sum = 0.0;
             for (mov, value) in mov_table {
-				let value = value / 2.0 + 0.5;
-                distr.push((mov, (value*40.0).exp()));
-                sum += (value*40.0).exp();
+                let value = value / 2.0 + 0.5;
+                distr.push((mov, value));
+                sum += value;
             }
 
             // rescale
@@ -191,9 +191,9 @@ impl<B: Position + Clone + Eq + PartialEq + Hash> MCTSTree<B> {
             )
         });
 
-		let mut node = self.nodes.get_mut(&root_board).unwrap();
-		node.value_sum = value;
-		node.visit_count = 1;
+        let mut node = self.nodes.get_mut(&root_board).unwrap();
+        node.value_sum = value;
+        node.visit_count = 1;
     }
 
     pub fn expand_node<P: FnOnce(&B) -> (f32, Vec<(B, Move, Node<B>)>)>(
@@ -255,7 +255,7 @@ impl<B: Position + Clone + Eq + PartialEq + Hash> MCTSTree<B> {
             boards.push(last);
         }
 
-		self.depth = self.depth.max(search_path.len() as u8);
+        self.depth = self.depth.max(search_path.len() as u8);
 
         let mut board = boards[boards.len() - 2].clone();
         board.play_unchecked(&last_action.unwrap());
@@ -279,7 +279,7 @@ impl<B: Position + Clone + Eq + PartialEq + Hash> MCTSTree<B> {
                         )
                         .expect("Failed to write to stdin");
                     stdin
-                        .write_all("go depth 2\n".as_bytes())
+                        .write_all("go depth 1\n".as_bytes())
                         .expect("Failed to write to stdin");
 
                     let mut last_value = 0.0;
@@ -347,11 +347,11 @@ impl<B: Position + Clone + Eq + PartialEq + Hash> MCTSTree<B> {
 
                     let mut distr = vec![];
                     let mut sum = 0.0;
-					for (mov, value) in mov_table {
-						let value = value / 2.0 + 0.5;
-						distr.push((mov, (value*40.0).exp()));
-						sum += (value*40.0).exp();
-					}
+                    for (mov, value) in mov_table {
+                        let value = value / 2.0 + 0.5;
+                        distr.push((mov, value));
+                        sum += value;
+                    }
 
                     // rescale
                     distr.iter_mut().for_each(|d| d.1 /= sum as f32);
@@ -422,8 +422,8 @@ impl<B: Position + Clone + Eq + PartialEq + Hash> MCTSTree<B> {
                 .iter()
                 .max_by(|a, b| {
                     let a_visits = self.nodes.get(&a.0).unwrap().visit_count;
-					let b_visits = self.nodes.get(&b.0).unwrap().visit_count;
-					a_visits.cmp(&b_visits)
+                    let b_visits = self.nodes.get(&b.0).unwrap().visit_count;
+                    a_visits.cmp(&b_visits)
                 })
                 .unwrap();
             curr_node = child.0.clone();
@@ -451,11 +451,11 @@ impl<B: Position + Clone + Eq + PartialEq + Hash> MCTSTree<B> {
         distr
     }
 
-	pub fn get_root_q(&self) -> f32 {
-		self.nodes.get(&self.root).unwrap().value()
-	}
+    pub fn get_root_q(&self) -> f32 {
+        self.nodes.get(&self.root).unwrap().value()
+    }
 
-	pub fn get_depth(&self) -> u8 {
-		self.depth
-	}
+    pub fn get_depth(&self) -> u8 {
+        self.depth
+    }
 }

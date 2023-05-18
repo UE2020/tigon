@@ -6,8 +6,8 @@ use std::io::Write;
 use std::process::{Command, Stdio};
 
 use std::io::{self, BufRead};
-use vampirc_uci::{parse_one, UciMessage, UciTimeControl};
 use std::time::{Duration, Instant};
+use vampirc_uci::{parse_one, UciMessage, UciTimeControl};
 
 pub mod mcts;
 
@@ -67,7 +67,7 @@ fn main() -> Result<(), PlayError<Chess>> {
                 mcts.set_root(&pos, &mut child);
             }
             UciMessage::Go { time_control, .. } => {
-				let target = match time_control {
+                let target = match time_control {
                     Some(time) => match time {
                         UciTimeControl::MoveTime(duration) => duration.to_std().unwrap(),
                         UciTimeControl::TimeLeft {
@@ -77,42 +77,47 @@ fn main() -> Result<(), PlayError<Chess>> {
                             ..
                         } => {
                             let time_left = match pos.turn() {
-                                Color::White => {
-                                    white_time.unwrap().to_std().unwrap()
-                                }
-                                Color::Black => {
-                                    black_time.unwrap().to_std().unwrap()
-                                }
+                                Color::White => white_time.unwrap().to_std().unwrap(),
+                                Color::Black => black_time.unwrap().to_std().unwrap(),
                             };
 
                             (time_left / 40).min(Duration::from_secs(60))
-                                + white_increment.unwrap_or(vampirc_uci::Duration::milliseconds(0)).to_std().unwrap()
+                                + white_increment
+                                    .unwrap_or(vampirc_uci::Duration::milliseconds(0))
+                                    .to_std()
+                                    .unwrap()
                         }
                         _ => Duration::from_millis(60000),
                     },
                     None => Duration::from_millis(60000),
                 };
 
-				let now = Instant::now();
+                let now = Instant::now();
+                let mut last_pv = None;
                 for i in 0..10000 {
                     mcts.rollout(pos.clone(), &mut child).unwrap();
-                    
-					if i % 800 == 0 {
-						println!(
-							"info depth {} score cp {} nodes {} nps {} pv {}",
-							mcts.get_depth(),
-							(290.680623072 * (3.096181612 * (mcts.get_root_q() - 0.5)).tan() / 10.0 / 1.5) as i32,
-							i,
-							(i as f32 / now.elapsed().as_secs_f32()) as u32,
-							mcts.pv()
-								.iter()
-								.map(|m| m.to_uci(pos.castles().mode()).to_string())
-								.collect::<Vec<_>>()
-								.join(" ")
-						);
-					}
+                    let current_pv = mcts
+                        .pv()
+                        .iter()
+                        .map(|m| m.to_uci(pos.castles().mode()).to_string())
+                        .collect::<Vec<_>>()
+                        .join(" ");
+                    if last_pv.as_ref() != Some(&current_pv) {
+                        println!(
+                            "info depth {} score cp {} nodes {} nps {} pv {}",
+                            mcts.get_depth(),
+                            (290.680623072 * (3.096181612 * (mcts.get_root_q() - 0.5)).tan()
+                                / 10.0
+                                / 1.5) as i32,
+                            i,
+                            (i as f32 / now.elapsed().as_secs_f32()) as u32,
+                            current_pv
+                        );
 
-					if now.elapsed() >= target {
+                        last_pv = Some(current_pv);
+                    }
+
+                    if now.elapsed() >= target {
                         break;
                     }
                 }
@@ -123,13 +128,15 @@ fn main() -> Result<(), PlayError<Chess>> {
                     pv[0].to_uci(pos.castles().mode()).to_string()
                 );
 
-                // for (mov, prob) in mcts.root_distribution(&pos) {
-                // 	println!(
-                // 		"{}: {:.2}%",
-                // 		mov.to_uci(pos.castles().mode()).to_string(),
-                // 		prob * 100.0
-                // 	);
-                // }
+                let mut distr = mcts.root_distribution(&pos);
+                distr.sort_by(|b, a| a.1.partial_cmp(&b.1).unwrap());
+                for (mov, prob) in distr {
+                    println!(
+                        "info string {}: {:.2}%",
+                        mov.to_uci(pos.castles().mode()).to_string(),
+                        prob * 100.0
+                    );
+                }
 
                 //let result = search::iterative_deepening_search(board, &dev, &mut nnue);
                 //println!("bestmove {}", result.0);
