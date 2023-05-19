@@ -100,7 +100,7 @@ impl<B: Position + Clone + Eq + PartialEq + Hash> MCTSTree<B> {
                 )
                 .expect("Failed to write to stdin");
             stdin
-                .write_all("go depth 1\n".as_bytes())
+                .write_all("go depth 6\n".as_bytes())
                 .expect("Failed to write to stdin");
 
             let mut last_value = 0.0;
@@ -279,7 +279,7 @@ impl<B: Position + Clone + Eq + PartialEq + Hash> MCTSTree<B> {
                         )
                         .expect("Failed to write to stdin");
                     stdin
-                        .write_all("go depth 1\n".as_bytes())
+                        .write_all("go depth 6\n".as_bytes())
                         .expect("Failed to write to stdin");
 
                     let mut last_value = 0.0;
