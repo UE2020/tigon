@@ -1,20 +1,20 @@
+use crate::*;
+
 use shakmaty::uci::*;
 use shakmaty::{
     fen::Fen,
-    zobrist::{Zobrist128, ZobristHash},
     *,
 };
 use std::collections::HashMap;
 use std::hash::Hash;
 use std::io::prelude::*;
 use std::io::BufReader;
-use std::io::BufWriter;
 use std::process::*;
-use vampirc_uci::{parse_one, UciMessage, UciPiece, UciTimeControl};
+use vampirc_uci::{parse_one, UciMessage};
 
-pub const C_PUCT: f32 = 1.2;
+pub const C_PUCT: f32 = 1.5;
 
-fn turn_to_side(color: Color) -> i8 {
+pub fn turn_to_side(color: Color) -> i8 {
     match color {
         Color::White => 1,
         Color::Black => -1,
@@ -25,6 +25,7 @@ fn turn_to_side(color: Color) -> i8 {
 pub struct Node<B> {
     // Don't point at nodes directly
     children: Option<Vec<(B, Move)>>,
+	parents: Vec<B>,
     visit_count: u32,
     value_sum: f32,
     prior: f32,
@@ -32,9 +33,14 @@ pub struct Node<B> {
 }
 
 impl<B> Node<B> {
-    pub fn new(prior: f32, to_play: i8) -> Self {
+    pub fn new(prior: f32, to_play: i8, creator: Option<B>) -> Self {
         Self {
             children: None,
+			parents: if let Some(creator) = creator {
+				vec![creator]
+			} else {
+				vec![]
+			},
             visit_count: 0,
             value_sum: 0.0,
             prior,
@@ -47,12 +53,8 @@ impl<B> Node<B> {
     }
 
     pub fn value(&self) -> f32 {
-        (self.value_sum / self.visit_count as f32) / 2.0 + 0.5
-    }
-
-    // pub fn select_child(&self, tree: &MCTSTree) -> (Move, B) {
-
-    // }
+        self.value_sum / self.visit_count as f32
+	}
 }
 
 #[derive(Debug, Clone)]
@@ -63,137 +65,45 @@ pub struct MCTSTree<B: Position + Clone + Eq + PartialEq + Hash> {
 }
 
 impl<B: Position + Clone + Eq + PartialEq + Hash> MCTSTree<B> {
-    pub fn new(root_board: &B, child: &mut Child) -> Self {
+    pub fn new<P: FnOnce(&B) -> (f32, Vec<(B, Move, Node<B>)>)>(root_board: &B, model: P) -> Self {
         let mut tree = Self {
             root: root_board.clone(),
             nodes: HashMap::new(),
             depth: 0,
         };
 
-        tree.set_root(root_board, child);
+        tree.set_root(root_board, model);
 
         tree
     }
 
-    pub fn set_root(&mut self, root_board: &B, child: &mut Child) {
+    pub fn set_root<P: FnOnce(&B) -> (f32, Vec<(B, Move, Node<B>)>)>(&mut self, root_board: &B, model: P) {
         if !self.nodes.contains_key(root_board) {
             self.nodes.insert(
                 root_board.clone(),
-                Node::new(0.0, turn_to_side(root_board.turn())),
+                Node::new(0.0, turn_to_side(root_board.turn()), None),
             );
         }
         self.root = root_board.clone();
         self.depth = 0;
 
-        let value = self.expand_node(root_board, |board| {
-            use vampirc_uci::UciInfoAttribute;
+        let node = self.nodes.get(&root_board);
+		let (expanded, value) = if let Some(node) = node {
+			if !node.expanded() {
+				(true, self.expand_node(&root_board, model))
+			} else {
+				(false, 0.0)
+			}
+		} else {
+			unreachable!()
+		};
 
-            let stdin = child.stdin.as_mut().unwrap();
-            let mut stdout = BufReader::new(child.stdout.as_mut().unwrap());
-            stdin
-                .write_all(
-                    format!(
-                        "position fen {}\n",
-                        Fen::from_position(board.clone(), EnPassantMode::Legal)
-                    )
-                    .as_bytes(),
-                )
-                .expect("Failed to write to stdin");
-            stdin
-                .write_all("go depth 6\n".as_bytes())
-                .expect("Failed to write to stdin");
+		if expanded {
+			let node = self.nodes.get_mut(&root_board).unwrap();
 
-            let mut last_value = 0.0;
-            let mut mov_table = HashMap::new();
-            loop {
-                let mut bytes = vec![];
-                loop {
-                    // read a char
-                    let mut output = [0];
-                    stdout
-                        .read_exact(&mut output)
-                        .expect("Failed to read output");
-                    if output[0] as char == '\n' {
-                        break;
-                    }
-                    bytes.push(output[0]);
-                }
-                let output = String::from_utf8_lossy(&bytes);
-                let msg = parse_one(&output);
-                match msg {
-                    UciMessage::Info(attrs) => {
-                        let mut mov_score = 0.0;
-                        let mut mov = None;
-                        let mut is_best_line = false;
-                        for attr in attrs {
-                            match attr {
-                                UciInfoAttribute::Score { cp, mate, .. } => {
-                                    if let Some(cp) = cp {
-                                        mov_score = 2.0
-                                            * (1.0
-                                                / (1.0 + 10.0f32.powf(-(cp as f32 / 100.0) / 4.0)))
-                                            - 1.0;
-                                    } else if let Some(mate) = mate {
-                                        if mate > 0 {
-                                            mov_score = 1.0 - (mate.abs() as f32 * 0.01);
-                                        } else {
-                                            mov_score = -1.0 + (mate.abs() as f32 * 0.01);
-                                        }
-                                        //break;
-                                    }
-                                }
-                                UciInfoAttribute::MultiPv(pv) => is_best_line = pv == 1,
-                                UciInfoAttribute::Pv(moves) => {
-                                    let uci = moves[0].to_string();
-                                    let uci: Uci = uci.parse().expect("bad pv");
-                                    mov = Some(uci.to_move(board).expect("bad pv"));
-                                }
-                                _ => {}
-                            }
-                        }
-
-                        if let Some(mov) = mov {
-                            mov_table.insert(mov, mov_score);
-                            if is_best_line {
-                                last_value = mov_score;
-                            }
-                        }
-                    }
-                    UciMessage::BestMove { .. } => break,
-                    _ => {}
-                }
-            }
-
-            let mut distr = vec![];
-            let mut sum = 0.0;
-            for (mov, value) in mov_table {
-                let value = value / 2.0 + 0.5;
-                distr.push((mov, value));
-                sum += value;
-            }
-
-            // rescale
-            distr.iter_mut().for_each(|d| d.1 /= sum as f32);
-
-            (
-                last_value,
-                distr
-                    .into_iter()
-                    .map(|(mov, value)| {
-                        let mut board = board.clone();
-                        board.play_unchecked(&mov);
-
-                        let turn = board.turn();
-
-                        (board, mov, Node::new(value, turn_to_side(turn)))
-                    })
-                    .collect::<Vec<_>>(),
-            )
-        });
-
-        let mut node = self.nodes.get_mut(&root_board).unwrap();
-        node.value_sum = value;
-        node.visit_count = 1;
+			node.visit_count = 1;
+			node.value_sum = value;
+		}
     }
 
     pub fn expand_node<P: FnOnce(&B) -> (f32, Vec<(B, Move, Node<B>)>)>(
@@ -202,15 +112,19 @@ impl<B: Position + Clone + Eq + PartialEq + Hash> MCTSTree<B> {
         prior: P,
     ) -> f32 {
         let (value, new_nodes) = prior(node);
-        if let Some(node) = self.nodes.get_mut(node) {
-            node.children = Some(
+        if let Some(expanding_node) = self.nodes.get_mut(node) {
+            expanding_node.children = Some(
                 new_nodes
                     .iter()
                     .map(|(board, m, _)| (board.clone(), m.clone()))
                     .collect::<Vec<_>>(),
             );
-            for (board, _, node) in new_nodes {
-                self.nodes.insert(board, node);
+            for (board, _, new_node) in new_nodes {
+				if let Some(new_node) = self.nodes.get_mut(&board) {
+					new_node.parents.push(node.clone());
+				} else {
+					self.nodes.insert(board, new_node);
+				}
             }
         } else {
             eprintln!(
@@ -222,7 +136,7 @@ impl<B: Position + Clone + Eq + PartialEq + Hash> MCTSTree<B> {
         value
     }
 
-    pub fn rollout(&mut self, board: B, child: &mut Child) -> Result<(), PlayError<B>> {
+    pub fn rollout<P: FnOnce(&B) -> (f32, Vec<(B, Move, Node<B>)>)>(&mut self, board: B, model: P) -> Result<(), PlayError<B>> {
         let mut search_path = vec![self.root.clone()];
         let mut boards = vec![board.clone()];
         let mut curr_node = self.root.clone();
@@ -264,113 +178,7 @@ impl<B: Position + Clone + Eq + PartialEq + Hash> MCTSTree<B> {
             Some(Outcome::Draw) => 0.0,
             None => {
                 // expand
-                let value = self.expand_node(&board, |board| {
-                    use vampirc_uci::UciInfoAttribute;
-
-                    let stdin = child.stdin.as_mut().unwrap();
-                    let mut stdout = BufReader::new(child.stdout.as_mut().unwrap());
-                    stdin
-                        .write_all(
-                            format!(
-                                "position fen {}\n",
-                                Fen::from_position(board.clone(), EnPassantMode::Legal)
-                            )
-                            .as_bytes(),
-                        )
-                        .expect("Failed to write to stdin");
-                    stdin
-                        .write_all("go depth 6\n".as_bytes())
-                        .expect("Failed to write to stdin");
-
-                    let mut last_value = 0.0;
-                    let mut mov_table = HashMap::new();
-                    loop {
-                        let mut bytes = vec![];
-                        loop {
-                            // read a char
-                            let mut output = [0];
-                            stdout
-                                .read_exact(&mut output)
-                                .expect("Failed to read output");
-                            if output[0] as char == '\n' {
-                                break;
-                            }
-                            bytes.push(output[0]);
-                        }
-                        let output = String::from_utf8_lossy(&bytes);
-                        let msg = parse_one(&output);
-                        match msg {
-                            UciMessage::Info(attrs) => {
-                                let mut mov_score = 0.0;
-                                let mut mov = None;
-                                let mut is_best_line = false;
-                                for attr in attrs {
-                                    match attr {
-                                        UciInfoAttribute::Score { cp, mate, .. } => {
-                                            if let Some(cp) = cp {
-                                                mov_score = 2.0
-                                                    * (1.0
-                                                        / (1.0
-                                                            + 10.0f32
-                                                                .powf(-(cp as f32 / 100.0) / 4.0)))
-                                                    - 1.0;
-                                            } else if let Some(mate) = mate {
-                                                if mate > 0 {
-                                                    mov_score = 1.0 - (mate.abs() as f32 * 0.01);
-                                                } else {
-                                                    mov_score = -1.0 + (mate.abs() as f32 * 0.01);
-                                                }
-                                                //break;
-                                            }
-                                        }
-                                        UciInfoAttribute::MultiPv(pv) => is_best_line = pv == 1,
-                                        UciInfoAttribute::Pv(moves) => {
-                                            let uci = moves[0].to_string();
-                                            let uci: Uci = uci.parse().expect("bad pv");
-                                            mov = Some(uci.to_move(board).expect("bad pv"));
-                                        }
-                                        _ => {}
-                                    }
-                                }
-
-                                if let Some(mov) = mov {
-                                    mov_table.insert(mov, mov_score);
-                                    if is_best_line {
-                                        last_value = mov_score;
-                                    }
-                                }
-                            }
-                            UciMessage::BestMove { .. } => break,
-                            _ => {}
-                        }
-                    }
-
-                    let mut distr = vec![];
-                    let mut sum = 0.0;
-                    for (mov, value) in mov_table {
-                        let value = value / 2.0 + 0.5;
-                        distr.push((mov, value));
-                        sum += value;
-                    }
-
-                    // rescale
-                    distr.iter_mut().for_each(|d| d.1 /= sum as f32);
-
-                    (
-                        last_value,
-                        distr
-                            .into_iter()
-                            .map(|(mov, value)| {
-                                let mut board = board.clone();
-                                board.play_unchecked(&mov);
-
-                                let turn = board.turn();
-
-                                (board, mov, Node::new(value, turn_to_side(turn)))
-                            })
-                            .collect::<Vec<_>>(),
-                    )
-                });
+                let value = self.expand_node(&board, model);
 
                 if board.turn() == Color::Black {
                     -value
@@ -380,15 +188,27 @@ impl<B: Position + Clone + Eq + PartialEq + Hash> MCTSTree<B> {
             }
         };
 
+		self.backpropogate(&board, value);
+
         // back up
-        for node in search_path.iter() {
-            let mut node = self.nodes.get_mut(node).expect("node not found");
-            node.visit_count += 1;
-            node.value_sum += value * node.to_play as f32;
-        }
+        // for node in search_path.iter() {
+        //     let mut node = self.nodes.get_mut(node).expect("node not found");
+        //     node.visit_count += 1;
+        //     node.value_sum += value * node.to_play as f32;
+        // }
 
         Ok(())
     }
+
+	pub fn backpropogate(&mut self, board: &B, value: f32) {
+		let node = self.nodes.get_mut(&board).unwrap();
+		node.visit_count += 1;
+		node.value_sum += value * node.to_play as f32;
+		let parents = node.parents.clone();
+		for parent in parents {
+			self.backpropogate(&parent, value);
+		}
+	}
 
     pub fn ucb(&self, parent: &B, child: &B, c_puct: f32) -> f32 {
         let parent = self.nodes.get(&parent).expect("node not found");
@@ -397,7 +217,7 @@ impl<B: Position + Clone + Eq + PartialEq + Hash> MCTSTree<B> {
         let prior_score = child.prior * c_puct * (parent.visit_count as f32).sqrt()
             / (child.visit_count as f32 + 1.0);
         let value_score = if child.visit_count > 0 {
-            -child.value()
+            (-child.value()) / 2.0 + 0.5
         } else {
             0.5
         };
@@ -452,7 +272,7 @@ impl<B: Position + Clone + Eq + PartialEq + Hash> MCTSTree<B> {
     }
 
     pub fn get_root_q(&self) -> f32 {
-        self.nodes.get(&self.root).unwrap().value()
+        self.nodes.get(&self.root).unwrap().value() / 2.0 + 0.5
     }
 
     pub fn get_depth(&self) -> u8 {

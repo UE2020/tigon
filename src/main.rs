@@ -1,6 +1,6 @@
-use dfdx::prelude::*;
 use shakmaty::fen::*;
 use shakmaty::uci::*;
+use shakmaty::variant::*;
 use shakmaty::*;
 use std::io::Write;
 use std::process::{Command, Stdio};
@@ -10,29 +10,29 @@ use std::time::{Duration, Instant};
 use vampirc_uci::{parse_one, UciMessage, UciTimeControl};
 
 pub mod mcts;
-
-type Mlp = (
-    (Linear<5, 32>, ReLU),
-    (Linear<32, 32>, ReLU),
-    (Linear<32, 2>, Tanh),
-);
+pub mod encoding;
 
 fn main() -> Result<(), PlayError<Chess>> {
-    let mut child = Command::new("stockfish")
-        .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        .spawn()
-        .expect("failed to execute child");
+    let mut model = tch::CModule::load("Net_10x128.pt").expect("model is in path");
+    model.set_eval();
 
-    child
-        .stdin
-        .as_ref()
-        .unwrap()
-        .write_all(b"setoption name MultiPV value 256")
-        .expect("failed to set MultiPV");
+	let inference = |pos: &Chess| {
+		let (policy, value) = encoding::get_neural_output(pos, &model);
+
+		(value, policy.into_iter().map(|(mov, prior)| {
+			let mut new_pos = pos.clone();
+			new_pos.play_unchecked(&mov);
+
+			let turn = new_pos.turn();
+
+			(new_pos, mov, mcts::Node::new(prior, mcts::turn_to_side(turn), Some(pos.clone())))
+		}).collect::<Vec<_>>())
+	};
 
     let mut pos: Chess = Chess::default();
-    let mut mcts = mcts::MCTSTree::new(&pos, &mut child);
+    let mut mcts = mcts::MCTSTree::new(&pos, inference);
+	let mut castling_mode = CastlingMode::Standard;
+	println!("Tigon ready");
 
     for line in io::stdin().lock().lines() {
         let line = line.unwrap();
@@ -40,20 +40,32 @@ fn main() -> Result<(), PlayError<Chess>> {
         match msg {
             UciMessage::Uci => {
                 println!("id name ProphetNNUE");
+				println!("option name UCI_Variant type string default <empty>");
+				println!("option name UCI_Chess960 type check default false");
                 println!("uciok")
-            }
+            },
+			UciMessage::SetOption { name, value } => {
+				if name == "UCI_Chess960" {
+					if &value.unwrap() == "true" {
+						castling_mode = CastlingMode::Chess960;
+						println!("Using chess960");
+					} else {
+						castling_mode = CastlingMode::Standard;
+					}
+				}
+			}
             UciMessage::Position {
                 startpos,
                 moves,
                 fen,
             } => {
-                dbg!(&fen);
+				dbg!(&fen);
                 if startpos {
                     pos = Chess::default();
                 } else if let Some(fen) = fen {
                     pos = Fen::from_ascii(fen.0.as_bytes())
                         .expect("bad fen")
-                        .into_position(CastlingMode::Standard)
+                        .into_position(castling_mode)
                         .expect("bad fen");
                 }
 
@@ -64,7 +76,7 @@ fn main() -> Result<(), PlayError<Chess>> {
                     pos.play_unchecked(&m);
                 }
 
-                mcts.set_root(&pos, &mut child);
+                mcts.set_root(&pos, inference);
             }
             UciMessage::Go { time_control, .. } => {
                 let target = match time_control {
@@ -94,41 +106,36 @@ fn main() -> Result<(), PlayError<Chess>> {
 
                 let now = Instant::now();
                 let mut last_pv = None;
-                for i in 0..10000 {
-                    mcts.rollout(pos.clone(), &mut child).unwrap();
-                    let current_pv = mcts
-                        .pv()
-                        .iter()
-                        .map(|m| m.to_uci(pos.castles().mode()).to_string())
-                        .collect::<Vec<_>>()
-                        .join(" ");
-                    if last_pv.as_ref() != Some(&current_pv) {
-                        println!(
-                            "info depth {} score cp {} nodes {} nps {} pv {}",
-                            mcts.get_depth(),
-                            (290.680623072 * (3.096181612 * (mcts.get_root_q() - 0.5)).tan()
-                                / 10.0
-                                / 1.5) as i32,
-                            i,
-                            (i as f32 / now.elapsed().as_secs_f32()) as u32,
-                            current_pv
-                        );
+				tch::no_grad(|| {
+					for i in 0..10000 {
+						mcts.rollout(pos.clone(), inference).unwrap();
+						let current_pv = mcts
+							.pv()
+							.iter()
+							.map(|m| m.to_uci(pos.castles().mode()).to_string())
+							.collect::<Vec<_>>()
+							.join(" ");
+						let passed = now.elapsed() >= target;
+						if last_pv.as_ref() != Some(&current_pv) || passed {
+							println!(
+								"info depth {} score cp {} nodes {} nps {} pv {}",
+								mcts.get_depth(),
+								((4.0 * ((mcts.get_root_q()) / (1.0 - mcts.get_root_q())).log10()) * 100.0) as i32,
+								i,
+								(i as f32 / now.elapsed().as_secs_f32()) as u32,
+								current_pv
+							);
+	
+							last_pv = Some(current_pv);
+						}
+	
+						if passed {
+							break;
+						}
+					}
+				});
 
-                        last_pv = Some(current_pv);
-                    }
-
-                    if now.elapsed() >= target {
-                        break;
-                    }
-                }
-
-                let pv = mcts.pv();
-                println!(
-                    "bestmove {}",
-                    pv[0].to_uci(pos.castles().mode()).to_string()
-                );
-
-                let mut distr = mcts.root_distribution(&pos);
+				let mut distr = mcts.root_distribution(&pos);
                 distr.sort_by(|b, a| a.1.partial_cmp(&b.1).unwrap());
                 for (mov, prob) in distr {
                     println!(
@@ -138,12 +145,18 @@ fn main() -> Result<(), PlayError<Chess>> {
                     );
                 }
 
+                let pv = mcts.pv();
+                println!(
+                    "bestmove {}",
+                    pv[0].to_uci(pos.castles().mode()).to_string()
+                );
+
                 //let result = search::iterative_deepening_search(board, &dev, &mut nnue);
                 //println!("bestmove {}", result.0);
             }
             UciMessage::IsReady => println!("readyok"),
             UciMessage::Quit => break,
-            _ => {}
+            c => println!("error: {}", c),
         }
     }
 
