@@ -1,11 +1,8 @@
 use crate::*;
 
 use shakmaty::uci::*;
-use shakmaty::{
-    fen::Fen,
-    *,
-};
-use std::collections::HashMap;
+use shakmaty::{fen::Fen, *};
+use std::collections::{HashMap, HashSet};
 use std::hash::Hash;
 use std::io::prelude::*;
 use std::io::BufReader;
@@ -25,7 +22,7 @@ pub fn turn_to_side(color: Color) -> i8 {
 pub struct Node<B> {
     // Don't point at nodes directly
     children: Option<Vec<(B, Move)>>,
-	parents: Vec<B>,
+    parents: Vec<B>,
     visit_count: u32,
     value_sum: f32,
     prior: f32,
@@ -36,11 +33,11 @@ impl<B> Node<B> {
     pub fn new(prior: f32, to_play: i8, creator: Option<B>) -> Self {
         Self {
             children: None,
-			parents: if let Some(creator) = creator {
-				vec![creator]
-			} else {
-				vec![]
-			},
+            parents: if let Some(creator) = creator {
+                vec![creator]
+            } else {
+                vec![]
+            },
             visit_count: 0,
             value_sum: 0.0,
             prior,
@@ -54,7 +51,7 @@ impl<B> Node<B> {
 
     pub fn value(&self) -> f32 {
         self.value_sum / self.visit_count as f32
-	}
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -77,7 +74,11 @@ impl<B: Position + Clone + Eq + PartialEq + Hash> MCTSTree<B> {
         tree
     }
 
-    pub fn set_root<P: FnOnce(&B) -> (f32, Vec<(B, Move, Node<B>)>)>(&mut self, root_board: &B, model: P) {
+    pub fn set_root<P: FnOnce(&B) -> (f32, Vec<(B, Move, Node<B>)>)>(
+        &mut self,
+        root_board: &B,
+        model: P,
+    ) {
         if !self.nodes.contains_key(root_board) {
             self.nodes.insert(
                 root_board.clone(),
@@ -88,22 +89,23 @@ impl<B: Position + Clone + Eq + PartialEq + Hash> MCTSTree<B> {
         self.depth = 0;
 
         let node = self.nodes.get(&root_board);
-		let (expanded, value) = if let Some(node) = node {
-			if !node.expanded() {
-				(true, self.expand_node(&root_board, model))
-			} else {
-				(false, 0.0)
-			}
-		} else {
-			unreachable!()
-		};
+        let (expanded, value) = if let Some(node) = node {
+            if !node.expanded() {
+                (true, self.expand_node(&root_board, model))
+            } else {
+                (false, 0.0)
+            }
+        } else {
+            unreachable!()
+        };
 
-		if expanded {
-			let node = self.nodes.get_mut(&root_board).unwrap();
+        let node = self.nodes.get_mut(&root_board).unwrap();
+        if expanded {
+            node.visit_count = 1;
+            node.value_sum = value;
+        }
 
-			node.visit_count = 1;
-			node.value_sum = value;
-		}
+        node.parents = vec![];
     }
 
     pub fn expand_node<P: FnOnce(&B) -> (f32, Vec<(B, Move, Node<B>)>)>(
@@ -120,11 +122,11 @@ impl<B: Position + Clone + Eq + PartialEq + Hash> MCTSTree<B> {
                     .collect::<Vec<_>>(),
             );
             for (board, _, new_node) in new_nodes {
-				if let Some(new_node) = self.nodes.get_mut(&board) {
-					new_node.parents.push(node.clone());
-				} else {
-					self.nodes.insert(board, new_node);
-				}
+                if let Some(new_node) = self.nodes.get_mut(&board) {
+                    new_node.parents.push(node.clone());
+                } else {
+                    self.nodes.insert(board, new_node);
+                }
             }
         } else {
             eprintln!(
@@ -136,7 +138,11 @@ impl<B: Position + Clone + Eq + PartialEq + Hash> MCTSTree<B> {
         value
     }
 
-    pub fn rollout<P: FnOnce(&B) -> (f32, Vec<(B, Move, Node<B>)>)>(&mut self, board: B, model: P) -> Result<(), PlayError<B>> {
+    pub fn rollout<P: FnOnce(&B) -> (f32, Vec<(B, Move, Node<B>)>)>(
+        &mut self,
+        board: B,
+        model: P,
+    ) -> Result<(), PlayError<B>> {
         let mut search_path = vec![self.root.clone()];
         let mut boards = vec![board.clone()];
         let mut curr_node = self.root.clone();
@@ -188,7 +194,8 @@ impl<B: Position + Clone + Eq + PartialEq + Hash> MCTSTree<B> {
             }
         };
 
-		self.backpropogate(&board, value);
+        let mut collision_table = HashSet::new();
+        self.backpropogate(&board, value, &mut collision_table);
 
         // back up
         // for node in search_path.iter() {
@@ -200,15 +207,19 @@ impl<B: Position + Clone + Eq + PartialEq + Hash> MCTSTree<B> {
         Ok(())
     }
 
-	pub fn backpropogate(&mut self, board: &B, value: f32) {
-		let node = self.nodes.get_mut(&board).unwrap();
-		node.visit_count += 1;
-		node.value_sum += value * node.to_play as f32;
-		let parents = node.parents.clone();
-		for parent in parents {
-			self.backpropogate(&parent, value);
-		}
-	}
+    pub fn backpropogate(&mut self, board: &B, value: f32, table: &mut HashSet<B>) {
+        // if a node has been seen, its parents must have been seen too
+        if table.contains(board) {
+            return;
+        }
+        let node = self.nodes.get_mut(&board).unwrap();
+        node.visit_count += 1;
+        node.value_sum += value * node.to_play as f32;
+        let parents = node.parents.clone();
+        for parent in parents {
+            self.backpropogate(&parent, value, table);
+        }
+    }
 
     pub fn ucb(&self, parent: &B, child: &B, c_puct: f32) -> f32 {
         let parent = self.nodes.get(&parent).expect("node not found");
@@ -277,5 +288,9 @@ impl<B: Position + Clone + Eq + PartialEq + Hash> MCTSTree<B> {
 
     pub fn get_depth(&self) -> u8 {
         self.depth
+    }
+
+    pub fn total_size(&self) -> usize {
+        self.nodes.len()
     }
 }

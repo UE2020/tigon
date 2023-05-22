@@ -198,11 +198,19 @@ pub fn encode_positions<B: Position>(positions: &[B]) -> EncodedPositions {
 
 #[allow(unused_assignments)]
 pub fn move_to_idx(mov: &Move, flip: bool) -> (isize, isize, isize) {
-	if mov.from().is_none() {
-		return (0, 0, 0)
-	}
-    let (from_rank, from_file) = icoords(if flip { Square::new((mov.from().unwrap() as u8 ^ 0x38) as u32) } else { mov.from().unwrap() });
-    let (to_rank, to_file) = icoords(if flip {Square::new((mov.to() as u8 ^ 0x38) as u32)} else {mov.to()});
+    if mov.from().is_none() {
+        return (0, 0, 0);
+    }
+    let (from_rank, from_file) = icoords(if flip {
+        Square::new((mov.from().unwrap() as u8 ^ 0x38) as u32)
+    } else {
+        mov.from().unwrap()
+    });
+    let (to_rank, to_file) = icoords(if flip {
+        Square::new((mov.to() as u8 ^ 0x38) as u32)
+    } else {
+        mov.to()
+    });
 
     let mut direction_plane = 0;
     let mut distance = 0;
@@ -281,7 +289,10 @@ pub fn legal_move_masks<B: Position>(positions: &[B]) -> MoveMasks {
 }
 
 /// Get the policy head probabilities and the value head prediction for a given position.
-pub fn get_neural_output<B: Position + Clone>(board: &B, network: &tch::CModule) -> (Vec<(Move, f32)>, f32) {
+pub fn get_neural_output<B: Position + Clone>(
+    board: &B,
+    network: &tch::CModule,
+) -> (Vec<(Move, f32)>, f32) {
     let position = encode_positions(&[board.clone()]);
     let mask = legal_move_masks(&[board.clone()]);
 
