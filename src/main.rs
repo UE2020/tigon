@@ -23,7 +23,13 @@ fn main() -> Result<(), PlayError<Chess>> {
     model.set_eval();
     let model = Arc::new(model);
 
-    let mut tables = Arc::new(Mutex::new(Tablebase::new()));
+    let tables = Arc::new(Mutex::new({
+		let mut t = Tablebase::new();
+		if std::path::Path::new("./tables").is_dir() {
+			t.add_directory("./tables");
+		}
+		t
+	}));
 
     let inference = {
         let model = model.clone();
