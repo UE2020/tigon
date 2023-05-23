@@ -84,9 +84,9 @@ dependencies = [
 
 [[package]]
 name = "bumpalo"
-version = "3.12.2"
+version = "3.13.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3c6ed94e98ecff0c12dd1b04c15ec0d7d9458ca8fe806cea6f12954efe74c63b"
+checksum = "a3e2c3daef883ecc1b5d58c15adae93470a91d425f3532ba1695849656af3fc1"
 
 [[package]]
 name = "byteorder"
@@ -229,6 +229,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "either"
+version = "1.8.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "7fcaabb2fef8c910e7f4c7ce9f67a1283a1715879a7c230ca9d6d1ae31f16d91"
+
+[[package]]
 name = "encode_unicode"
 version = "0.3.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -348,6 +354,15 @@ name = "intmap"
 version = "2.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ee87fd093563344074bacf24faa0bb0227fb6969fb223e922db798516de924d6"
+
+[[package]]
+name = "itertools"
+version = "0.10.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b0fd2260e829bddf4cb6ea802289de2f86d6a7a690192fbe91b3f46e0f2c8473"
+dependencies = [
+ "either",
+]
 
 [[package]]
 name = "jobserver"
@@ -555,6 +570,17 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "dc59d1bcc64fc5d021d67521f818db868368028108d37f0e98d74e33f68297b5"
 
 [[package]]
+name = "positioned-io"
+version = "0.3.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "09b9485cf7f528baf34edd811ec8283a168864912e11d0b7d3e0510738761114"
+dependencies = [
+ "byteorder",
+ "libc",
+ "winapi",
+]
+
+[[package]]
 name = "ppv-lite86"
 version = "0.2.17"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -630,6 +656,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "rustc-hash"
+version = "1.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "08d43f7aa6b08d49f382cde6a7982047c3426db949b1424bc4b7ec9ae12c6ce2"
+
+[[package]]
 name = "rustls"
 version = "0.20.8"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -687,6 +719,22 @@ dependencies = [
  "arrayvec",
  "bitflags",
  "btoi",
+]
+
+[[package]]
+name = "shakmaty-syzygy"
+version = "0.23.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "bca85b005de0fa6fe17c6fcdcb46fce65e95a69d9fe957289f86787fadbddb75"
+dependencies = [
+ "arrayvec",
+ "bitflags",
+ "byteorder",
+ "itertools",
+ "once_cell",
+ "positioned-io",
+ "rustc-hash",
+ "shakmaty",
 ]
 
 [[package]]
@@ -757,6 +805,7 @@ dependencies = [
  "ndarray",
  "rand",
  "shakmaty",
+ "shakmaty-syzygy",
  "tch",
  "vampirc-uci",
 ]
