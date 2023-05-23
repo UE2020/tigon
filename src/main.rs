@@ -23,8 +23,7 @@ fn main() -> Result<(), PlayError<Chess>> {
     model.set_eval();
     let model = Arc::new(model);
 
-    //let mut tables = Tablebase::new();
-    //tables.add_directory("./tables").expect("tables not found");
+    let mut tables = Arc::new(Mutex::new(Tablebase::new()));
 
     let inference = {
         let model = model.clone();
@@ -62,6 +61,7 @@ fn main() -> Result<(), PlayError<Chess>> {
         let should_stop = should_stop.clone();
         let mcts = mcts.clone();
         let inference = inference.clone();
+        let tables = tables.clone();
         thread::spawn(move || loop {
             let recv: (Chess, Option<UciTimeControl>) = rx.recv().unwrap();
             should_stop.store(false, Ordering::Relaxed);
@@ -98,10 +98,33 @@ fn main() -> Result<(), PlayError<Chess>> {
             let now = Instant::now();
             let mut last_pv = None;
             let mut tbhits = 0;
+            if (pos.board().black() | pos.board().white()).count()
+                <= tables.lock().unwrap().max_pieces()
+            {
+                let best_move = tables.lock().unwrap().best_move(&pos);
+                if let Ok(Some(mov)) = best_move {
+                    println!(
+                        "info string {}: DTZ={}; WDL={}",
+                        San::from_move(&pos, &mov.0).to_string().to_string(),
+                        mov.1.ignore_rounding().0,
+                        mov.1.signum()
+                    );
+                    println!(
+                        "bestmove {}",
+                        mov.0.to_uci(pos.castles().mode()).to_string()
+                    );
+                }
+                continue;
+            }
             tch::no_grad(|| {
                 for i in 0..10000 {
-                    mcts.rollout(pos.clone(), None, inference.clone(), &mut tbhits)
-                        .unwrap();
+                    mcts.rollout(
+                        pos.clone(),
+                        Some(&tables.lock().unwrap()),
+                        inference.clone(),
+                        &mut tbhits,
+                    )
+                    .unwrap();
                     if should_stop.load(Ordering::Relaxed) {
                         should_stop.store(false, Ordering::Relaxed);
                         break;
@@ -172,6 +195,7 @@ fn main() -> Result<(), PlayError<Chess>> {
                 println!("id name ProphetNNUE");
                 println!("option name UCI_Variant type string default <empty>");
                 println!("option name UCI_Chess960 type check default false");
+                println!("option name SyzygyPath type string default <empty>");
                 println!("uciok")
             }
             UciMessage::SetOption { name, value } => {
@@ -181,6 +205,19 @@ fn main() -> Result<(), PlayError<Chess>> {
                         println!("Using chess960");
                     } else {
                         castling_mode = CastlingMode::Standard;
+                    }
+                } else if name == "SyzygyPath" {
+                    match value {
+                        Some(value) => {
+                            tables
+                                .lock()
+                                .unwrap()
+                                .add_directory("./tables")
+                                .expect("tables not found");
+                        }
+                        None => {
+                            *tables.lock().unwrap() = Tablebase::new();
+                        }
                     }
                 }
             }
