@@ -185,7 +185,7 @@ fn main() -> Result<(), PlayError<Chess>> {
         });
     }
 
-    println!("Tigon ready");
+    eprintln!("{}", include_str!("banner.txt"));
 
     for line in io::stdin().lock().lines() {
         let line = line.unwrap();
