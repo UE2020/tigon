@@ -26,7 +26,7 @@ fn main() -> Result<(), PlayError<Chess>> {
     let tables = Arc::new(Mutex::new({
 		let mut t = Tablebase::new();
 		if std::path::Path::new("./tables").is_dir() {
-			t.add_directory("./tables");
+			t.add_directory("./tables").expect("no tables");
 		}
 		t
 	}));
