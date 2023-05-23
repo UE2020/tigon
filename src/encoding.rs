@@ -329,6 +329,11 @@ pub fn get_neural_output<B: Position + Clone>(
             let mut move_probabilities = Vec::new();
             let movegen = board.legal_moves();
             for mov in movegen {
+                if let Some(p) = mov.promotion() {
+                    if p != Role::Queen {
+                        continue;
+                    }
+                }
                 let flip = board.turn() == Color::Black;
 
                 let (plane_idx, rank_idx, file_idx) = move_to_idx(&mov, flip);

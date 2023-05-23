@@ -284,20 +284,20 @@ impl<B: Position + Syzygy + Clone + Eq + PartialEq + Hash> MCTSTree<B> {
         pv
     }
 
-    pub fn root_distribution(&self, root: &B) -> Vec<(Move, f32)> {
+    pub fn root_distribution(&self, root: &B) -> Vec<(Move, f64)> {
         let moves = root.legal_moves();
         let mut distr = vec![];
-        let mut sum = 0;
+        let mut sum = 0.0;
         for mov in moves {
             let mut child = root.clone();
             child.play_unchecked(&mov);
             let child_node = self.nodes.get(&child).expect("node not found");
-            distr.push((mov, child_node.visit_count as f32));
-            sum += child_node.visit_count;
+            distr.push((mov, (child_node.visit_count as f64).exp()));
+            sum += (child_node.visit_count as f64).exp();
         }
 
         // rescale
-        distr.iter_mut().for_each(|d| d.1 /= sum as f32);
+        distr.iter_mut().for_each(|d| d.1 /= sum);
 
         distr
     }

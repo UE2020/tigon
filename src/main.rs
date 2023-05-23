@@ -3,10 +3,8 @@ use shakmaty::san::*;
 use shakmaty::uci::*;
 use shakmaty::variant::*;
 use shakmaty::*;
-use std::io::Write;
-use std::process::{Command, Stdio};
 
-use shakmaty_syzygy::{Dtz, MaybeRounded, Syzygy, Tablebase, Wdl};
+use shakmaty_syzygy::{Syzygy, Tablebase};
 use std::io::{self, BufRead};
 use std::sync::{
     atomic::{AtomicBool, Ordering},
@@ -25,8 +23,8 @@ fn main() -> Result<(), PlayError<Chess>> {
     model.set_eval();
     let model = Arc::new(model);
 
-    let mut tables = Tablebase::new();
-    tables.add_directory("./tables").expect("tables not found");
+    //let mut tables = Tablebase::new();
+    //tables.add_directory("./tables").expect("tables not found");
 
     let inference = {
         let model = model.clone();
@@ -102,7 +100,7 @@ fn main() -> Result<(), PlayError<Chess>> {
             let mut tbhits = 0;
             tch::no_grad(|| {
                 for i in 0..10000 {
-                    mcts.rollout(pos.clone(), Some(&tables), inference.clone(), &mut tbhits)
+                    mcts.rollout(pos.clone(), None, inference.clone(), &mut tbhits)
                         .unwrap();
                     if should_stop.load(Ordering::Relaxed) {
                         should_stop.store(false, Ordering::Relaxed);
@@ -142,7 +140,7 @@ fn main() -> Result<(), PlayError<Chess>> {
                 .iter()
                 .map(|m| San::from_move(&pos, m).to_string())
                 .collect::<Vec<_>>()
-                .join(", ");
+                .join(" ");
 
             let mut distr = mcts.root_distribution(&pos);
             distr.sort_by(|b, a| a.1.partial_cmp(&b.1).unwrap());
@@ -217,7 +215,7 @@ fn main() -> Result<(), PlayError<Chess>> {
             UciMessage::Stop => {
                 should_stop.store(true, Ordering::Relaxed);
             }
-            c => println!("error: {}", c),
+            c => println!("[INTERNAL ERROR] {}", c),
         }
     }
 
