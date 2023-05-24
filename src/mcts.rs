@@ -256,9 +256,9 @@ impl<B: Position + Syzygy + Clone + Eq + PartialEq + Hash> MCTSTree<B> {
         value_score + prior_score
     }
 
-    pub fn pv(&self) -> Vec<Move> {
+    pub fn pv_from_node(&self, pos: B) -> Vec<Move> {
         let mut pv = vec![];
-        let mut curr_node = self.root.clone();
+        let mut curr_node = pos;
         while self
             .nodes
             .get(&curr_node)
@@ -282,6 +282,25 @@ impl<B: Position + Syzygy + Clone + Eq + PartialEq + Hash> MCTSTree<B> {
         }
 
         pv
+    }
+
+    pub fn pv(&self) -> Vec<Move> {
+        self.pv_from_node(self.root.clone())
+    }
+
+    pub fn all_pvs(&self) -> Vec<Vec<Move>> {
+        let root_node = self.nodes.get(&self.root).expect("no root");
+        let mut pvs = vec![];
+        for (child, _) in root_node
+            .children
+            .as_ref()
+            .expect("no children at root")
+            .iter()
+        {
+            pvs.push(self.pv_from_node(child.clone()));
+        }
+
+        pvs
     }
 
     pub fn root_distribution(&self, root: &B) -> Vec<(Move, f32)> {

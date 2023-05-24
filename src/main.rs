@@ -22,19 +22,19 @@ pub mod mcts;
 
 fn main() -> Result<(), PlayError<Chess>> {
     tch::set_num_threads(4);
-	eprintln!("Loading neural network (20x256)");
+    eprintln!("Loading neural network (20x256)");
     let mut model = tch::CModule::load("Net_10x128.pt").expect("model is in path");
     model.set_eval();
     let model = Arc::new(model);
 
     let tables = Arc::new(Mutex::new({
-		let mut t = Tablebase::new();
-		if std::path::Path::new("./tables").is_dir() {
-			eprintln!("Automatically discovered Syzygy tables in ./tables");
-			t.add_directory("./tables").expect("no tables");
-		}
-		t
-	}));
+        let mut t = Tablebase::new();
+        if std::path::Path::new("./tables").is_dir() {
+            eprintln!("Automatically discovered Syzygy tables in ./tables");
+            t.add_directory("./tables").expect("no tables");
+        }
+        t
+    }));
 
     let inference = {
         let model = model.clone();
@@ -65,6 +65,7 @@ fn main() -> Result<(), PlayError<Chess>> {
     let mut pos: Chess = Chess::default();
     let mcts = Arc::new(Mutex::new(mcts::MCTSTree::new(&pos, inference.clone())));
     let mut castling_mode = CastlingMode::Standard;
+    let mut multipv = 1;
 
     let (tx, rx) = mpsc::channel();
     let should_stop = Arc::new(AtomicBool::new(false));
@@ -74,10 +75,9 @@ fn main() -> Result<(), PlayError<Chess>> {
         let inference = inference.clone();
         let tables = tables.clone();
         thread::spawn(move || loop {
-            let recv: (Chess, Option<UciTimeControl>) = rx.recv().unwrap();
+            let (pos, time_control, multipv): (Chess, Option<UciTimeControl>, u8) =
+                rx.recv().unwrap();
             should_stop.store(false, Ordering::Relaxed);
-            let pos = recv.0;
-            let time_control = recv.1;
 
             let mut mcts = mcts.lock().unwrap();
 
@@ -148,17 +148,25 @@ fn main() -> Result<(), PlayError<Chess>> {
                         .join(" ");
                     let passed = now.elapsed() >= target;
                     if last_pv.as_ref() != Some(&current_pv) || passed {
-                        println!(
-                            "info depth {} score cp {} nodes {} nps {} hashfull {} tbhits {} pv {}",
-                            mcts.get_depth(),
-                            ((4.0 * ((mcts.get_root_q()) / (1.0 - mcts.get_root_q())).log10())
-                                * 100.0) as i32,
-                            i,
-                            (i as f32 / now.elapsed().as_secs_f32()) as u32,
-                            (mcts.total_size() as f32 / (40000.0 * 20.0) * 1000.0) as usize,
-                            tbhits,
-                            current_pv
-                        );
+                        let mut all_pvs = mcts.all_pvs();
+                        all_pvs.truncate(multipv as usize);
+                        for (i, pv) in all_pvs.into_iter().enumerate() {
+                            println!(
+								"info depth {} multipv {} score cp {} nodes {} nps {} hashfull {} tbhits {} pv {}",
+								mcts.get_depth(),
+								i + 1,
+								((4.0 * ((mcts.get_root_q()) / (1.0 - mcts.get_root_q())).log10())
+									* 100.0) as i32,
+								i,
+								(i as f32 / now.elapsed().as_secs_f32()) as u32,
+								(mcts.total_size() as f32 / (40000.0 * 20.0) * 1000.0) as usize,
+								tbhits,
+								pv.iter()
+								.map(|m| m.to_uci(pos.castles().mode()).to_string())
+								.collect::<Vec<_>>()
+								.join(" ")
+							);
+                        }
 
                         last_pv = Some(current_pv);
                     }
@@ -179,19 +187,22 @@ fn main() -> Result<(), PlayError<Chess>> {
             let mut distr = mcts.root_distribution(&pos);
             distr.sort_by(|b, a| a.1.partial_cmp(&b.1).unwrap());
             distr.truncate(10);
-            eprintln!("Calculated best line: {}\nProbability distribution:", san_pv.italic());
+            eprintln!(
+                "Calculated best line: {}\nProbability distribution:",
+                san_pv.italic()
+            );
             for (i, (mov, prob)) in distr.into_iter().enumerate() {
                 eprintln!(
                     "{}: {}%",
                     San::from_move(&pos, &mov).to_string().to_string().bold(),
                     {
-						let s = format!("{:.2}", (prob * 100.0));
-						match i {
-							0 => s.green(),
-							1..=3 => s.yellow(),
-							_ => s.red(),
-						}
-					}
+                        let s = format!("{:.2}", (prob * 100.0));
+                        match i {
+                            0 => s.green(),
+                            1..=3 => s.yellow(),
+                            _ => s.red(),
+                        }
+                    }
                 );
             }
 
@@ -214,6 +225,7 @@ fn main() -> Result<(), PlayError<Chess>> {
                 //println!("option name UCI_Variant type string default <empty>");
                 println!("option name UCI_Chess960 type check default false");
                 println!("option name SyzygyPath type string default <empty>");
+                println!("option name MultiPV type spin default 1 min 1 max 255");
                 println!("uciok")
             }
             UciMessage::SetOption { name, value } => {
@@ -236,6 +248,10 @@ fn main() -> Result<(), PlayError<Chess>> {
                         None => {
                             *tables.lock().unwrap() = Tablebase::new();
                         }
+                    }
+                } else if name == "MultiPV" {
+                    if let Some(value) = value {
+                        multipv = value.parse().expect("invalid multipv");
                     }
                 }
             }
@@ -263,7 +279,7 @@ fn main() -> Result<(), PlayError<Chess>> {
                 mcts.lock().unwrap().set_root(&pos, inference.clone());
             }
             UciMessage::Go { time_control, .. } => {
-                tx.send((pos.clone(), time_control)).unwrap();
+                tx.send((pos.clone(), time_control, multipv)).unwrap();
             }
             UciMessage::IsReady => println!("readyok"),
             UciMessage::Quit => break,
