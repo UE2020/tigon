@@ -3,8 +3,8 @@ use shakmaty::san::*;
 use shakmaty::uci::*;
 use shakmaty::variant::*;
 use shakmaty::*;
-
 use shakmaty_syzygy::{Syzygy, Tablebase};
+
 use std::io::{self, BufRead};
 use std::sync::{
     atomic::{AtomicBool, Ordering},
@@ -12,13 +12,17 @@ use std::sync::{
 };
 use std::thread;
 use std::time::{Duration, Instant};
+
 use vampirc_uci::{parse_one, UciMessage, UciTimeControl};
+
+use colored::Colorize;
 
 pub mod encoding;
 pub mod mcts;
 
 fn main() -> Result<(), PlayError<Chess>> {
     tch::set_num_threads(4);
+	eprintln!("Loading neural network (20x256)");
     let mut model = tch::CModule::load("Net_10x128.pt").expect("model is in path");
     model.set_eval();
     let model = Arc::new(model);
@@ -26,6 +30,7 @@ fn main() -> Result<(), PlayError<Chess>> {
     let tables = Arc::new(Mutex::new({
 		let mut t = Tablebase::new();
 		if std::path::Path::new("./tables").is_dir() {
+			eprintln!("Automatically discovered Syzygy tables in ./tables");
 			t.add_directory("./tables").expect("no tables");
 		}
 		t
@@ -173,13 +178,20 @@ fn main() -> Result<(), PlayError<Chess>> {
 
             let mut distr = mcts.root_distribution(&pos);
             distr.sort_by(|b, a| a.1.partial_cmp(&b.1).unwrap());
-            distr.truncate(5);
-            println!("info string best line: {}", san_pv);
-            for (mov, prob) in distr {
-                println!(
-                    "info string {}: {:.2}%",
-                    San::from_move(&pos, &mov).to_string().to_string(),
-                    prob * 100.0
+            distr.truncate(10);
+            eprintln!("Calculated best line: {}\nProbability distribution:", san_pv.italic());
+            for (i, (mov, prob)) in distr.into_iter().enumerate() {
+                eprintln!(
+                    "{}: {}%",
+                    San::from_move(&pos, &mov).to_string().to_string().bold(),
+                    {
+						let s = format!("{:.2}", (prob * 100.0));
+						match i {
+							0 => s.green(),
+							1..=3 => s.yellow(),
+							_ => s.red(),
+						}
+					}
                 );
             }
 
@@ -198,8 +210,8 @@ fn main() -> Result<(), PlayError<Chess>> {
         let msg: UciMessage = parse_one(&line);
         match msg {
             UciMessage::Uci => {
-                println!("id name ProphetNNUE");
-                println!("option name UCI_Variant type string default <empty>");
+                println!("id name TigonNN");
+                //println!("option name UCI_Variant type string default <empty>");
                 println!("option name UCI_Chess960 type check default false");
                 println!("option name SyzygyPath type string default <empty>");
                 println!("uciok")
@@ -218,7 +230,7 @@ fn main() -> Result<(), PlayError<Chess>> {
                             tables
                                 .lock()
                                 .unwrap()
-                                .add_directory("./tables")
+                                .add_directory(value)
                                 .expect("tables not found");
                         }
                         None => {
