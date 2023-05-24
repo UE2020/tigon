@@ -59,6 +59,7 @@ impl<B> Node<B> {
 pub struct MCTSTree<B: Position + Syzygy + Clone + Eq + PartialEq + Hash> {
     nodes: HashMap<B, Node<B>>,
     root: B,
+    root_ply_counter: u32,
     depth: u8,
 }
 
@@ -66,6 +67,7 @@ impl<B: Position + Syzygy + Clone + Eq + PartialEq + Hash> MCTSTree<B> {
     pub fn new<P: Fn(&B) -> (f32, Vec<(B, Move, Node<B>)>)>(root_pos: &B, model: Arc<P>) -> Self {
         let mut tree = Self {
             root: root_pos.clone(),
+            root_ply_counter: root_pos.halfmoves(),
             nodes: HashMap::new(),
             depth: 0,
         };
@@ -80,6 +82,7 @@ impl<B: Position + Syzygy + Clone + Eq + PartialEq + Hash> MCTSTree<B> {
         root_pos: &B,
         model: Arc<P>,
     ) {
+        self.root_ply_counter = root_pos.halfmoves();
         if !self.nodes.contains_key(root_pos) {
             self.nodes.insert(
                 root_pos.clone(),
@@ -105,8 +108,6 @@ impl<B: Position + Syzygy + Clone + Eq + PartialEq + Hash> MCTSTree<B> {
             node.visit_count = 1;
             node.value_sum = value;
         }
-
-        node.parents = vec![];
     }
 
     pub fn expand_node<P: Fn(&B) -> (f32, Vec<(B, Move, Node<B>)>)>(
@@ -228,7 +229,8 @@ impl<B: Position + Syzygy + Clone + Eq + PartialEq + Hash> MCTSTree<B> {
 
     pub fn backpropogate(&mut self, pos: &B, value: f32, table: &mut HashSet<B>) {
         // if a node has been seen, its parents must have been seen too
-        if table.contains(pos) {
+        // don't backpropogate all the way to the root of the tree
+        if table.contains(pos) || pos.halfmoves() < self.root_ply_counter {
             return;
         }
         let node = self.nodes.get_mut(&pos).unwrap();
@@ -288,16 +290,19 @@ impl<B: Position + Syzygy + Clone + Eq + PartialEq + Hash> MCTSTree<B> {
         self.pv_from_node(self.root.clone())
     }
 
-    pub fn all_pvs(&self) -> Vec<Vec<Move>> {
+    pub fn all_pvs(&self) -> Vec<(u32, f32, Vec<Move>)> {
         let root_node = self.nodes.get(&self.root).expect("no root");
         let mut pvs = vec![];
-        for (child, _) in root_node
+        for (child, mov) in root_node
             .children
             .as_ref()
             .expect("no children at root")
             .iter()
         {
-            pvs.push(self.pv_from_node(child.clone()));
+            let mut new_pv = vec![mov.clone()];
+            new_pv.extend_from_slice(&self.pv_from_node(child.clone()));
+            let child = self.nodes.get(child).unwrap();
+            pvs.push((child.visit_count, (-child.value()) / 2.0 + 0.5, new_pv));
         }
 
         pvs
