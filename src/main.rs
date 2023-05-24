@@ -151,14 +151,13 @@ fn main() -> Result<(), PlayError<Chess>> {
                         let mut all_pvs = mcts.all_pvs();
                         all_pvs.sort_by(|b, a| a.0.cmp(&b.0));
                         all_pvs.truncate(multipv as usize);
-                        let root_score = mcts.get_root_q();
+                        let root_score = mcts.get_root_q() / 2.0 + 0.5;
                         for (multipv, (_, score, pv)) in all_pvs.into_iter().enumerate() {
                             println!(
 								"info depth {} multipv {} score cp {} nodes {} nps {} hashfull {} tbhits {} pv {}",
 								mcts.get_depth(),
 								multipv + 1,
-								((4.0 * ((root_score as f32 - ((multipv as f32 +1.0) * 0.1)) / (1.0 - score)).log10())
-									* 100.0) as i32,
+							    (((root_score - 0.5) * 15.0 * 100.0) as i32 * 2) - multipv as i32 * 10,
 								i,
 								(i as f32 / now.elapsed().as_secs_f32()) as u32,
 								(mcts.total_size() as f32 / (40000.0 * 20.0) * 1000.0) as usize,

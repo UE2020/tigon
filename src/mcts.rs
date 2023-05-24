@@ -327,7 +327,7 @@ impl<B: Position + Syzygy + Clone + Eq + PartialEq + Hash> MCTSTree<B> {
     }
 
     pub fn get_root_q(&self) -> f32 {
-        self.nodes.get(&self.root).unwrap().value() / 2.0 + 0.5
+        self.nodes.get(&self.root).unwrap().value()
     }
 
     pub fn get_depth(&self) -> u8 {
