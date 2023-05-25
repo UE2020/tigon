@@ -114,9 +114,9 @@ fn main() -> Result<(), PlayError<Chess>> {
             {
                 let best_move = tables.lock().unwrap().best_move(&pos);
                 if let Ok(Some(mov)) = best_move {
-					println!(
+                    println!(
                         "info depth 2 multipv 1 score mate {} pv {}",
-						-Wdl::from_dtz_after_zeroing(mov.1).signum(),
+                        -Wdl::from_dtz_after_zeroing(mov.1).signum(),
                         mov.0.to_uci(pos.castles().mode()).to_string(),
                     );
                     println!(
@@ -156,15 +156,18 @@ fn main() -> Result<(), PlayError<Chess>> {
                         let mut all_pvs = mcts.all_pvs();
                         all_pvs.sort_by(|b, a| a.0.cmp(&b.0));
                         all_pvs.truncate(multipv as usize);
-                        let root_score = mcts.get_root_q() / 2.0 + 0.5;
-						let max_root_score = all_pvs.iter().max_by_key(|e| e.0).unwrap().0;
+                        let max_root_score = all_pvs
+                            .iter()
+                            .max_by_key(|e| (e.1 * 1000.0) as i32)
+                            .unwrap()
+                            .1;
+                        let max_root_score = ((max_root_score - 0.5) * 15.0 * 100.0) as i32;
                         for (multipv, (visits, score, pv)) in all_pvs.into_iter().enumerate() {
-							let proportion = visits as f32 / max_root_score as f32;
                             println!(
 								"info depth {} multipv {} score cp {} nodes {} nps {} hashfull {} tbhits {} pv {}",
 								mcts.get_depth(),
 								multipv + 1,
-							    ((((score - 0.5) * 15.0 * 100.0)) as i32),
+							    if multipv == 0 { max_root_score } else { (((score - 0.5) * 15.0 * 100.0)) as i32 },
 								i,
 								(i as f32 / now.elapsed().as_secs_f32()) as u32,
 								(mcts.total_size() as f32 / (40000.0 * 20.0) * 1000.0) as usize,

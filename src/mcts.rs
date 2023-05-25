@@ -317,10 +317,10 @@ impl<B: Position + Syzygy + Clone + Eq + PartialEq + Hash> MCTSTree<B> {
             let mut child = root.clone();
             child.play_unchecked(&mov);
             let child_node = self.nodes.get(&child);
-			if let Some(child_node) = child_node {
-				distr.push((mov, child_node.visit_count as f32));
-				sum += child_node.visit_count;
-			}            
+            if let Some(child_node) = child_node {
+                distr.push((mov, child_node.visit_count as f32));
+                sum += child_node.visit_count;
+            }
         }
 
         // rescale
