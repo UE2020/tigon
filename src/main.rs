@@ -3,7 +3,7 @@ use shakmaty::san::*;
 use shakmaty::uci::*;
 use shakmaty::variant::*;
 use shakmaty::*;
-use shakmaty_syzygy::{Syzygy, Tablebase};
+use shakmaty_syzygy::{Syzygy, Tablebase, Wdl};
 
 use std::io::{self, BufRead};
 use std::sync::{
@@ -114,11 +114,16 @@ fn main() -> Result<(), PlayError<Chess>> {
             {
                 let best_move = tables.lock().unwrap().best_move(&pos);
                 if let Ok(Some(mov)) = best_move {
+					println!(
+                        "info depth 2 multipv 1 score mate {} pv {}",
+						-Wdl::from_dtz_after_zeroing(mov.1).signum(),
+                        mov.0.to_uci(pos.castles().mode()).to_string(),
+                    );
                     println!(
                         "info string {}: DTZ={}; WDL={}",
                         San::from_move(&pos, &mov.0).to_string().to_string(),
                         mov.1.ignore_rounding().0,
-                        mov.1.signum()
+                        Wdl::from_dtz_after_zeroing(mov.1).signum()
                     );
                     println!(
                         "bestmove {}",
@@ -152,12 +157,14 @@ fn main() -> Result<(), PlayError<Chess>> {
                         all_pvs.sort_by(|b, a| a.0.cmp(&b.0));
                         all_pvs.truncate(multipv as usize);
                         let root_score = mcts.get_root_q() / 2.0 + 0.5;
-                        for (multipv, (_, score, pv)) in all_pvs.into_iter().enumerate() {
+						let max_root_score = all_pvs.iter().max_by_key(|e| e.0).unwrap().0;
+                        for (multipv, (visits, score, pv)) in all_pvs.into_iter().enumerate() {
+							let proportion = visits as f32 / max_root_score as f32;
                             println!(
 								"info depth {} multipv {} score cp {} nodes {} nps {} hashfull {} tbhits {} pv {}",
 								mcts.get_depth(),
 								multipv + 1,
-							    (((root_score - 0.5) * 15.0 * 100.0) as i32 * 2) - multipv as i32 * 10,
+							    ((((score - 0.5) * 15.0 * 100.0)) as i32),
 								i,
 								(i as f32 / now.elapsed().as_secs_f32()) as u32,
 								(mcts.total_size() as f32 / (40000.0 * 20.0) * 1000.0) as usize,

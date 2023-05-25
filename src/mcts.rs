@@ -6,6 +6,7 @@ use std::collections::{HashMap, HashSet};
 use std::hash::Hash;
 use std::io::prelude::*;
 use std::io::BufReader;
+use std::num::NonZeroU32;
 use std::process::*;
 use std::sync::Arc;
 use vampirc_uci::{parse_one, UciMessage};
@@ -59,7 +60,7 @@ impl<B> Node<B> {
 pub struct MCTSTree<B: Position + Syzygy + Clone + Eq + PartialEq + Hash> {
     nodes: HashMap<B, Node<B>>,
     root: B,
-    root_ply_counter: u32,
+    root_ply_counter: NonZeroU32,
     depth: u8,
 }
 
@@ -67,7 +68,7 @@ impl<B: Position + Syzygy + Clone + Eq + PartialEq + Hash> MCTSTree<B> {
     pub fn new<P: Fn(&B) -> (f32, Vec<(B, Move, Node<B>)>)>(root_pos: &B, model: Arc<P>) -> Self {
         let mut tree = Self {
             root: root_pos.clone(),
-            root_ply_counter: root_pos.halfmoves(),
+            root_ply_counter: root_pos.fullmoves(),
             nodes: HashMap::new(),
             depth: 0,
         };
@@ -82,7 +83,7 @@ impl<B: Position + Syzygy + Clone + Eq + PartialEq + Hash> MCTSTree<B> {
         root_pos: &B,
         model: Arc<P>,
     ) {
-        self.root_ply_counter = root_pos.halfmoves();
+        self.root_ply_counter = root_pos.fullmoves();
         if !self.nodes.contains_key(root_pos) {
             self.nodes.insert(
                 root_pos.clone(),
@@ -230,7 +231,7 @@ impl<B: Position + Syzygy + Clone + Eq + PartialEq + Hash> MCTSTree<B> {
     pub fn backpropogate(&mut self, pos: &B, value: f32, table: &mut HashSet<B>) {
         // if a node has been seen, its parents must have been seen too
         // don't backpropogate all the way to the root of the tree
-        if table.contains(pos) || pos.halfmoves() < self.root_ply_counter {
+        if table.contains(pos) || pos.fullmoves() < self.root_ply_counter {
             return;
         }
         let node = self.nodes.get_mut(&pos).unwrap();
@@ -315,9 +316,11 @@ impl<B: Position + Syzygy + Clone + Eq + PartialEq + Hash> MCTSTree<B> {
         for mov in moves {
             let mut child = root.clone();
             child.play_unchecked(&mov);
-            let child_node = self.nodes.get(&child).expect("node not found");
-            distr.push((mov, child_node.visit_count as f32));
-            sum += child_node.visit_count;
+            let child_node = self.nodes.get(&child);
+			if let Some(child_node) = child_node {
+				distr.push((mov, child_node.visit_count as f32));
+				sum += child_node.visit_count;
+			}            
         }
 
         // rescale
