@@ -20,13 +20,27 @@ pub fn turn_to_side(color: Color) -> i8 {
 }
 
 #[derive(Debug, Clone)]
+pub struct ParentPointer<B> {
+    pos: B,
+    prior: f32
+}
+
+impl<B> ParentPointer<B> {
+    pub fn new(pos: B, prior: f32) -> ParentPointer<B> {
+        Self {
+            pos,
+            prior
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
 pub struct Node<B> {
     // Don't point at nodes directly
     children: Option<Vec<(B, Move)>>,
-    parents: Vec<B>,
+    parents: Vec<ParentPointer<B>>,
     visit_count: u32,
     value_sum: f32,
-    prior: f32,
     to_play: i8,
 }
 
@@ -35,13 +49,12 @@ impl<B> Node<B> {
         Self {
             children: None,
             parents: if let Some(creator) = creator {
-                vec![creator]
+                vec![ParentPointer::new(creator, prior)]
             } else {
                 vec![]
             },
             visit_count: 0,
             value_sum: 0.0,
-            prior,
             to_play,
         }
     }
@@ -124,8 +137,8 @@ impl<B: Position + Syzygy + Clone + Eq + PartialEq + Hash> MCTSTree<B> {
                     .collect::<Vec<_>>(),
             );
             for (pos, _, new_node) in new_nodes {
-                if let Some(new_node) = self.nodes.get_mut(&pos) {
-                    new_node.parents.push(node.clone());
+                if let Some(extant_node) = self.nodes.get_mut(&pos) {
+                    extant_node.parents.push(ParentPointer::new(node.clone(), new_node.parents[0].prior));
                 } else {
                     self.nodes.insert(pos, new_node);
                 }
@@ -239,18 +252,18 @@ impl<B: Position + Syzygy + Clone + Eq + PartialEq + Hash> MCTSTree<B> {
         table.insert(pos.clone());
         let parents = node.parents.clone();
         for parent in parents {
-            self.backpropogate(&parent, value, table);
+            self.backpropogate(&parent.pos, value, table);
         }
     }
 
     pub fn ucb(&self, parent: &B, child: &B, c_puct: f32) -> f32 {
-        let parent = self.nodes.get(&parent).expect("node not found");
-        let child = self.nodes.get(&child).expect("node not found");
-
-        let prior_score = child.prior * c_puct * (parent.visit_count as f32).sqrt()
-            / (child.visit_count as f32 + 1.0);
-        let value_score = if child.visit_count > 0 {
-            (-child.value()) / 2.0 + 0.5
+        let parent_node = self.nodes.get(&parent).expect("node not found");
+        let child_node = self.nodes.get(&child).expect("node not found");
+        let parent_ref = child_node.parents.iter().find(|p| p.pos == *parent).expect("no parent found");
+        let prior_score = parent_ref.prior * c_puct * (parent_node.visit_count as f32).sqrt()
+            / (child_node.visit_count as f32 + 1.0);
+        let value_score = if child_node.visit_count > 0 {
+            (-child_node.value()) / 2.0 + 0.5
         } else {
             0.5
         };
