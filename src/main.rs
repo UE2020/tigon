@@ -162,7 +162,7 @@ fn main() -> Result<(), PlayError<Chess>> {
                             .unwrap()
                             .1;
                         let max_root_score = ((max_root_score - 0.5) * 15.0 * 100.0) as i32;
-                        for (multipv, (visits, score, pv)) in all_pvs.into_iter().enumerate() {
+                        for (multipv, (_, score, pv)) in all_pvs.into_iter().enumerate() {
                             println!(
 								"info depth {} multipv {} score cp {} nodes {} nps {} hashfull {} tbhits {} pv {}",
 								mcts.get_depth(),

@@ -1,15 +1,10 @@
 use crate::*;
 
-use shakmaty::uci::*;
-use shakmaty::{fen::Fen, *};
+use shakmaty::{fen::Fen};
 use std::collections::{HashMap, HashSet};
 use std::hash::Hash;
-use std::io::prelude::*;
-use std::io::BufReader;
 use std::num::NonZeroU32;
-use std::process::*;
 use std::sync::Arc;
-use vampirc_uci::{parse_one, UciMessage};
 
 pub const C_PUCT: f32 = 1.5;
 
@@ -36,9 +31,24 @@ impl<B> ParentPointer<B> {
 }
 
 #[derive(Debug, Clone)]
+pub struct ChildPointer<B> {
+    pos: B,
+    mov: Move,
+}
+
+impl<B> ChildPointer<B> {
+    pub fn new(pos: B, mov: Move) -> ChildPointer<B> {
+        Self {
+            pos,
+            mov,
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
 pub struct Node<B> {
     // Don't point at nodes directly
-    children: Option<Vec<(B, Move)>>,
+    children: Option<Vec<ChildPointer<B>>>,
     parents: Vec<ParentPointer<B>>,
     visit_count: u32,
     value_sum: f32,
@@ -134,7 +144,7 @@ impl<B: Position + Syzygy + Clone + Eq + PartialEq + Hash> MCTSTree<B> {
             expanding_node.children = Some(
                 new_nodes
                     .iter()
-                    .map(|(pos, m, _)| (pos.clone(), m.clone()))
+                    .map(|(pos, m, _)| ChildPointer::new(pos.clone(), m.clone()))
                     .collect::<Vec<_>>(),
             );
             for (pos, _, new_node) in new_nodes {
@@ -178,18 +188,18 @@ impl<B: Position + Syzygy + Clone + Eq + PartialEq + Hash> MCTSTree<B> {
                 .unwrap()
                 .iter()
                 .max_by(|a, b| {
-                    self.ucb(&curr_node, &a.0, C_PUCT)
-                        .partial_cmp(&self.ucb(&curr_node, &b.0, C_PUCT))
+                    self.ucb(&curr_node, &a.pos, C_PUCT)
+                        .partial_cmp(&self.ucb(&curr_node, &b.pos, C_PUCT))
                         .unwrap_or(std::cmp::Ordering::Equal)
                 })
                 .unwrap();
 
-            search_path.push(child.0.clone());
-            curr_node = child.0.clone();
-            last_action = Some(child.1.clone());
+            search_path.push(child.pos.clone());
+            curr_node = child.pos.clone();
+            last_action = Some(child.mov.clone());
             let last = positions.last();
             let mut last = last.unwrap().clone();
-            last.play_unchecked(&child.1);
+            last.play_unchecked(&child.mov);
             positions.push(last);
         }
 
@@ -288,13 +298,13 @@ impl<B: Position + Syzygy + Clone + Eq + PartialEq + Hash> MCTSTree<B> {
                 .unwrap()
                 .iter()
                 .max_by(|a, b| {
-                    let a_visits = self.nodes.get(&a.0).unwrap().visit_count;
-                    let b_visits = self.nodes.get(&b.0).unwrap().visit_count;
+                    let a_visits = self.nodes.get(&a.pos).unwrap().visit_count;
+                    let b_visits = self.nodes.get(&b.pos).unwrap().visit_count;
                     a_visits.cmp(&b_visits)
                 })
                 .unwrap();
-            curr_node = child.0.clone();
-            pv.push(child.1.clone());
+            curr_node = child.pos.clone();
+            pv.push(child.mov.clone());
         }
 
         pv
@@ -307,15 +317,15 @@ impl<B: Position + Syzygy + Clone + Eq + PartialEq + Hash> MCTSTree<B> {
     pub fn all_pvs(&self) -> Vec<(u32, f32, Vec<Move>)> {
         let root_node = self.nodes.get(&self.root).expect("no root");
         let mut pvs = vec![];
-        for (child, mov) in root_node
+        for child_ptr in root_node
             .children
             .as_ref()
             .expect("no children at root")
             .iter()
         {
-            let mut new_pv = vec![mov.clone()];
-            new_pv.extend_from_slice(&self.pv_from_node(child.clone()));
-            let child = self.nodes.get(child).unwrap();
+            let mut new_pv = vec![child_ptr.mov.clone()];
+            new_pv.extend_from_slice(&self.pv_from_node(child_ptr.pos.clone()));
+            let child = self.nodes.get(&child_ptr.pos).unwrap();
             pvs.push((child.visit_count, (-child.value()) / 2.0 + 0.5, new_pv));
         }
 
