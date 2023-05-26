@@ -106,7 +106,11 @@ impl<B: Position + Syzygy + Clone + Eq + PartialEq + Hash> MCTSTree<B> {
         root_pos: &B,
         model: Arc<P>,
     ) {
-        self.root_ply_counter = root_pos.fullmoves();
+		let full_moves = root_pos.fullmoves();
+		if full_moves < self.root_ply_counter {
+			self.nodes.clear();
+		}
+        self.root_ply_counter = full_moves;
         if !self.nodes.contains_key(root_pos) {
             self.nodes.insert(
                 root_pos.clone(),
