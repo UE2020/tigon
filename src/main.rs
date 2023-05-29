@@ -22,8 +22,9 @@ pub mod mcts;
 
 fn main() -> Result<(), PlayError<Chess>> {
     tch::set_num_threads(4);
+	eprintln!("Current working directory: {}", std::env::current_dir().unwrap().display());
     eprintln!("Loading neural network (20x256)");
-    let mut model = tch::CModule::load("Net_10x128.pt").expect("model is in path");
+    let mut model = tch::CModule::load("Net_10x128.pt").expect("model is not in path");
     model.set_eval();
     let model = Arc::new(model);
 
@@ -40,7 +41,6 @@ fn main() -> Result<(), PlayError<Chess>> {
         let model = model.clone();
         Arc::new(move |pos: &Chess| {
             let (policy, value) = encoding::get_neural_output(pos, &model);
-
             (
                 value,
                 policy
@@ -54,7 +54,7 @@ fn main() -> Result<(), PlayError<Chess>> {
                         (
                             new_pos,
                             mov,
-                            mcts::Node::new(prior, mcts::turn_to_side(turn), Some(pos.clone())),
+                            mcts::Node::new(0.0, prior, mcts::turn_to_side(turn), Some(pos.clone())),
                         )
                     })
                     .collect::<Vec<_>>(),
@@ -74,7 +74,7 @@ fn main() -> Result<(), PlayError<Chess>> {
         let mcts = mcts.clone();
         let inference = inference.clone();
         let tables = tables.clone();
-        thread::spawn(move || loop {
+        thread::spawn(move || 'outer: loop {
             let (pos, time_control, multipv): (Chess, Option<UciTimeControl>, u8) =
                 rx.recv().unwrap();
             should_stop.store(false, Ordering::Relaxed);
@@ -95,13 +95,13 @@ fn main() -> Result<(), PlayError<Chess>> {
                             Color::Black => black_time.unwrap().to_std().unwrap(),
                         };
 
-                        (time_left / 40).min(Duration::from_secs(60))
+                        (time_left / 30).min(Duration::from_secs(60))
                             + white_increment
                                 .unwrap_or(vampirc_uci::Duration::milliseconds(0))
                                 .to_std()
                                 .unwrap()
                     }
-                    _ => Duration::from_millis(60000),
+                    _ => Duration::from_millis(3.6e+6 as u64),
                 },
                 None => Duration::from_millis(60000),
             };
@@ -129,13 +129,32 @@ fn main() -> Result<(), PlayError<Chess>> {
                         "bestmove {}",
                         mov.0.to_uci(pos.castles().mode()).to_string()
                     );
+					continue;
                 }
-                continue;
             }
+
+			// look for mate in 1
+			let legals = pos.legal_moves();
+			for mov in legals {
+				let mut new_pos = pos.clone();
+				new_pos.play_unchecked(&mov);
+				if let Some(Outcome::Decisive { .. }) = new_pos.outcome() {
+					// mate in 1 found
+					println!(
+                        "info depth 2 multipv 1 score mate 1 pv {}",
+						mov.to_uci(pos.castles().mode()).to_string()
+                    );
+                    println!(
+                        "bestmove {}",
+                        mov.to_uci(pos.castles().mode()).to_string()
+                    );
+					continue 'outer;
+				}
+			}
+
             tch::no_grad(|| {
-                for i in 0..10000 {
+                for i in 0.. {
                     mcts.rollout(
-                        pos.clone(),
                         Some(&tables.lock().unwrap()),
                         inference.clone(),
                         &mut tbhits,
@@ -152,7 +171,7 @@ fn main() -> Result<(), PlayError<Chess>> {
                         .collect::<Vec<_>>()
                         .join(" ");
                     let passed = now.elapsed() >= target;
-                    if last_pv.as_ref() != Some(&current_pv) || passed {
+                    if last_pv.as_ref() != Some(&current_pv) || passed || i % 150 == 0 {
                         let mut all_pvs = mcts.all_pvs();
                         all_pvs.sort_by(|b, a| a.0.cmp(&b.0));
                         all_pvs.truncate(multipv as usize);
@@ -161,13 +180,13 @@ fn main() -> Result<(), PlayError<Chess>> {
                             .max_by_key(|e| (e.1 * 1000.0) as i32)
                             .unwrap()
                             .1;
-                        let max_root_score = ((max_root_score - 0.5) * 15.0 * 100.0) as i32;
+                        let max_root_score = mcts::q_to_cp(max_root_score);
                         for (multipv, (_, score, pv)) in all_pvs.into_iter().enumerate() {
                             println!(
 								"info depth {} multipv {} score cp {} nodes {} nps {} hashfull {} tbhits {} pv {}",
 								mcts.get_depth(),
 								multipv + 1,
-							    if multipv == 0 { max_root_score } else { (((score - 0.5) * 15.0 * 100.0)) as i32 },
+							    if multipv == 0 { max_root_score } else { mcts::q_to_cp(score) },
 								i,
 								(i as f32 / now.elapsed().as_secs_f32()) as u32,
 								(mcts.total_size() as f32 / (40000.0 * 20.0) * 1000.0) as usize,
@@ -195,7 +214,7 @@ fn main() -> Result<(), PlayError<Chess>> {
                 .collect::<Vec<_>>()
                 .join(" ");
 
-            let mut distr = mcts.root_distribution(&pos);
+            let mut distr = mcts.root_distribution();
             distr.sort_by(|b, a| a.1.partial_cmp(&b.1).unwrap());
             distr.truncate(10);
             eprintln!(
@@ -238,12 +257,15 @@ fn main() -> Result<(), PlayError<Chess>> {
                 println!("option name SyzygyPath type string default <empty>");
                 println!("option name MultiPV type spin default 1 min 1 max 255");
                 println!("uciok")
-            }
+            },
+			UciMessage::UciNewGame => {
+				mcts.lock().unwrap().clear(inference.clone());
+			},
             UciMessage::SetOption { name, value } => {
                 if name == "UCI_Chess960" {
                     if &value.unwrap() == "true" {
                         castling_mode = CastlingMode::Chess960;
-                        println!("Using chess960");
+                        eprintln!("Using chess960");
                     } else {
                         castling_mode = CastlingMode::Standard;
                     }
