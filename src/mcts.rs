@@ -1,11 +1,11 @@
 use crate::*;
 
-use shakmaty::{fen::Fen};
-use std::collections::{HashMap};
+use shakmaty::fen::Fen;
+use std::cell::RefCell;
+use std::collections::HashMap;
 use std::hash::Hash;
 use std::num::NonZeroU32;
 use std::sync::Arc;
-use std::cell::RefCell;
 
 pub const C_PUCT: f32 = 1.75;
 
@@ -24,10 +24,7 @@ pub struct ParentPointer<B> {
 
 impl<B> ParentPointer<B> {
     pub fn new(pos: B, prior: f32) -> ParentPointer<B> {
-        Self {
-            pos,
-            prior,
-        }
+        Self { pos, prior }
     }
 }
 
@@ -35,7 +32,7 @@ impl<B> ParentPointer<B> {
 pub struct ChildPointer<B> {
     pos: B,
     mov: Move,
-	visits: u32,
+    visits: u32,
 }
 
 impl<B> ChildPointer<B> {
@@ -43,7 +40,7 @@ impl<B> ChildPointer<B> {
         Self {
             pos,
             mov,
-			visits: 0
+            visits: 0,
         }
     }
 }
@@ -55,7 +52,7 @@ pub struct Node<B> {
     parents: Vec<ParentPointer<B>>,
     visit_count: u32,
     value: f32,
-	nn_value: f32,
+    nn_value: f32,
     to_play: i8,
 }
 
@@ -70,7 +67,7 @@ impl<B> Node<B> {
             },
             visit_count: 0,
             value,
-			nn_value: value,
+            nn_value: value,
             to_play,
         }
     }
@@ -83,6 +80,8 @@ impl<B> Node<B> {
         self.value
     }
 }
+
+pub type HistoryTable<B> = HashMap<B, u16>;
 
 #[derive(Debug, Clone)]
 pub struct MCTSTree<B: Position + Syzygy + Clone + Eq + PartialEq + Hash + std::fmt::Debug> {
@@ -111,7 +110,7 @@ impl<B: Position + Syzygy + Clone + Eq + PartialEq + Hash + std::fmt::Debug> MCT
         root_pos: &B,
         model: Arc<P>,
     ) {
-		let full_moves = root_pos.fullmoves();
+        let full_moves = root_pos.fullmoves();
         self.root_ply_counter = full_moves;
         if !self.nodes.contains_key(root_pos) {
             self.nodes.insert(
@@ -147,7 +146,7 @@ impl<B: Position + Syzygy + Clone + Eq + PartialEq + Hash + std::fmt::Debug> MCT
     ) -> f32 {
         let (value, new_nodes) = prior(node);
         if let Some(expanding_node) = self.nodes.get_mut(node) {
-			assert!(!expanding_node.children.is_some());
+            assert!(!expanding_node.children.is_some());
             expanding_node.children = Some(
                 new_nodes
                     .iter()
@@ -156,7 +155,9 @@ impl<B: Position + Syzygy + Clone + Eq + PartialEq + Hash + std::fmt::Debug> MCT
             );
             for (pos, _, new_node) in new_nodes {
                 if let Some(extant_node) = self.nodes.get_mut(&pos) {
-                    extant_node.parents.push(ParentPointer::new(node.clone(), new_node.parents[0].prior));
+                    extant_node
+                        .parents
+                        .push(ParentPointer::new(node.clone(), new_node.parents[0].prior));
                 } else {
                     self.nodes.insert(pos, new_node);
                 }
@@ -171,15 +172,17 @@ impl<B: Position + Syzygy + Clone + Eq + PartialEq + Hash + std::fmt::Debug> MCT
         value
     }
 
+	// position fen r5k1/pp4pp/1n2pp2/8/1Q2P3/Pb1rBP2/2q1BKPP/RR6 w - - 14 31 moves b1c1 c2b2 a1b1 b2a2 b1a1 a2b2 a1b1 b2a2 
     pub fn rollout<P: Fn(&B) -> (f32, Vec<(B, Move, Node<B>)>)>(
         &mut self,
         tablebase: Option<&Tablebase<B>>,
         model: Arc<P>,
         tbhits: &mut usize,
+		mut history: HistoryTable<Board>,
     ) -> Result<(), PlayError<B>> {
         let mut search_path = vec![self.root.clone()];
         let mut curr_node = self.root.clone();
-        let mut last_action = None;
+		let mut is_repetition = false;
         while self
             .nodes
             .get(&curr_node)
@@ -197,17 +200,22 @@ impl<B: Position + Syzygy + Clone + Eq + PartialEq + Hash + std::fmt::Debug> MCT
                         .partial_cmp(&self.ucb(&curr_node, &b.borrow().pos, C_PUCT))
                         .unwrap_or(std::cmp::Ordering::Equal)
                 })
-                .unwrap().borrow_mut();
-			child.visits += 1;
+                .unwrap()
+                .borrow_mut();
+            child.visits += 1;
             search_path.push(child.pos.clone());
             curr_node = child.pos.clone();
-            last_action = Some(child.mov.clone());
+			history.entry(child.pos.board().clone()).and_modify(|counter| *counter += 1).or_insert(1);
+			if let Some(cnt) = history.get(&search_path.last().unwrap().board()) {
+				if *cnt >= 2 {
+					is_repetition = true;
+					break;
+				}
+			}
         }
 
         self.depth = self.depth.max(search_path.len() as u8);
-
-        let mut pos = search_path[search_path.len() - 2].clone();
-        pos.play_unchecked(&last_action.unwrap());
+        let pos = search_path.last().unwrap();
         let value = match pos.outcome() {
             Some(Outcome::Decisive { winner }) => turn_to_side(winner) as f32,
             Some(Outcome::Draw) => 0.0,
@@ -233,9 +241,14 @@ impl<B: Position + Syzygy + Clone + Eq + PartialEq + Hash + std::fmt::Debug> MCT
                 };
 
                 // expand
-                let value = match tablebase_result {
-                    None => self.expand_node(&pos, model),
-                    Some(tb) => tb,
+                let value = match (tablebase_result, is_repetition) {
+					(_, true) => {
+						// unexpand (?) node
+						self.nodes.get_mut(&pos).unwrap().children = None;
+						0.0
+					},
+                    (None, _) => self.expand_node(&pos, model),
+                    (Some(tb), _) => tb,
                 };
 
                 if pos.turn() == Color::Black {
@@ -246,33 +259,36 @@ impl<B: Position + Syzygy + Clone + Eq + PartialEq + Hash + std::fmt::Debug> MCT
             }
         };
 
-		// begin by propogating the value to the node at the tip
-		let node = self.nodes.get_mut(&pos).unwrap();
-		node.nn_value = value * node.to_play as f32;
+        // begin by propogating the value to the node at the tip
+        let node = self.nodes.get_mut(&pos).unwrap();
+        node.nn_value = value * node.to_play as f32;
 
-		for pos in search_path.into_iter().rev() {
-			let node = self.nodes.get(&pos).unwrap();
-			let mut values = vec![(1, node.nn_value)];
-			let mut total_visits = 1;
-			if let Some(children) = node.children.as_ref() {
-				for child in children {
-					let child = child.borrow();
-					let child_node = self.nodes.get(&child.pos);
-					if let Some(child_node) = child_node {
-						if child_node.visit_count < 1 {
-							continue;
-						}
-						values.push((child.visits, -child_node.value));
-						total_visits += child.visits;
-					}
-				}
-			}
+        for pos in search_path.into_iter().rev() {
+            let node = self.nodes.get(&pos).unwrap();
+            let mut values = vec![(1, node.nn_value)];
+            let mut total_visits = 1;
+            if let Some(children) = node.children.as_ref() {
+                for child in children {
+                    let child = child.borrow();
+                    let child_node = self.nodes.get(&child.pos);
+                    if let Some(child_node) = child_node {
+                        if child_node.visit_count < 1 {
+                            continue;
+                        }
+                        values.push((child.visits, -child_node.value));
+                        total_visits += child.visits;
+                    }
+                }
+            }
 
-			let node = self.nodes.get_mut(&pos).unwrap();
-			let value: f32 = values.into_iter().map(|(visits, value)| (visits as f32 / total_visits as f32) * value).sum();
-			node.visit_count += 1;
-			node.value = value;
-		}
+            let node = self.nodes.get_mut(&pos).unwrap();
+            let value: f32 = values
+                .into_iter()
+                .map(|(visits, value)| (visits as f32 / total_visits as f32) * value)
+                .sum();
+            node.visit_count += 1;
+            node.value = value;
+        }
 
         Ok(())
     }
@@ -280,11 +296,22 @@ impl<B: Position + Syzygy + Clone + Eq + PartialEq + Hash + std::fmt::Debug> MCT
     pub fn ucb(&self, parent: &B, child: &B, c_puct: f32) -> f32 {
         let parent_node = self.nodes.get(&parent).expect("node not found");
         let child_node = self.nodes.get(&child).expect("node not found");
-		let child_ref = parent_node.children.as_ref().unwrap().iter().find(|p| p.borrow().pos == *child).expect("no child found").borrow();
-        let parent_ref = child_node.parents.iter().find(|p| p.pos == *parent).expect("no parent found");
-		let base = 38739.0;
-		let factor = 3.894;
-		let final_cpuct = c_puct + factor + ((child_ref.visits as f32 + base) / base).ln();
+        let child_ref = parent_node
+            .children
+            .as_ref()
+            .unwrap()
+            .iter()
+            .find(|p| p.borrow().pos == *child)
+            .expect("no child found")
+            .borrow();
+        let parent_ref = child_node
+            .parents
+            .iter()
+            .find(|p| p.pos == *parent)
+            .expect("no parent found");
+        let base = 38739.0;
+        let factor = 3.894;
+        let final_cpuct = c_puct + factor + ((child_ref.visits as f32 + base) / base).ln();
         let prior_score = parent_ref.prior * final_cpuct * (parent_node.visit_count as f32).sqrt()
             / (child_ref.visits as f32 + 1.0);
         let value_score = if child_node.visit_count > 0 {
@@ -337,9 +364,9 @@ impl<B: Position + Syzygy + Clone + Eq + PartialEq + Hash + std::fmt::Debug> MCT
             .expect("no children at root")
             .iter()
         {
-			if child_ptr.borrow().visits == 0 {
-				continue;
-			}
+            if child_ptr.borrow().visits == 0 {
+                continue;
+            }
             let mut new_pv = vec![child_ptr.borrow().mov.clone()];
             new_pv.extend_from_slice(&self.pv_from_node(child_ptr.borrow().pos.clone()));
             let child = self.nodes.get(&child_ptr.borrow().pos).unwrap();
@@ -352,12 +379,12 @@ impl<B: Position + Syzygy + Clone + Eq + PartialEq + Hash + std::fmt::Debug> MCT
     pub fn root_distribution(&self) -> Vec<(Move, f32)> {
         let mut distr = vec![];
         let mut sum = 0;
-		let root = self.nodes.get(&self.root).unwrap();
-		for child in root.children.as_ref().unwrap() {
-			let child = child.borrow();
-			distr.push((child.mov.clone(), child.visits as f32));
-			sum += child.visits;
-		}
+        let root = self.nodes.get(&self.root).unwrap();
+        for child in root.children.as_ref().unwrap() {
+            let child = child.borrow();
+            distr.push((child.mov.clone(), child.visits as f32));
+            sum += child.visits;
+        }
 
         // rescale
         distr.iter_mut().for_each(|d| d.1 /= sum as f32);
@@ -377,12 +404,12 @@ impl<B: Position + Syzygy + Clone + Eq + PartialEq + Hash + std::fmt::Debug> MCT
         self.nodes.len()
     }
 
-	pub fn clear<P: Fn(&B) -> (f32, Vec<(B, Move, Node<B>)>)>(&mut self, model: Arc<P>) {
-		*self = Self::new(&self.root, model);
-	}
+    pub fn clear<P: Fn(&B) -> (f32, Vec<(B, Move, Node<B>)>)>(&mut self, model: Arc<P>) {
+        *self = Self::new(&self.root, model);
+    }
 }
 
 pub fn q_to_cp(q: f32) -> i32 {
-	let q = q * 2.0 - 1.0;
-	(-(q.signum() * (1.0 - q.abs()).ln() / (1.2f32).ln()) * 100.0 / 2.0) as i32
+    let q = q * 2.0 - 1.0;
+    (-(q.signum() * (1.0 - q.abs()).ln() / (1.2f32).ln()) * 100.0 / 2.0) as i32
 }

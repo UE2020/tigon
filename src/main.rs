@@ -5,7 +5,7 @@ use shakmaty::variant::*;
 use shakmaty::*;
 use shakmaty_syzygy::{Syzygy, Tablebase, Wdl};
 
-use std::io::{self, BufRead};
+use std::io::{self, BufRead, Write};
 use std::sync::{
     atomic::{AtomicBool, Ordering},
     mpsc, Arc, Mutex,
@@ -22,11 +22,19 @@ pub mod mcts;
 
 fn main() -> Result<(), PlayError<Chess>> {
     tch::set_num_threads(4);
-	eprintln!("Current working directory: {}", std::env::current_dir().unwrap().display());
+    eprintln!(
+        "Current working directory: {}",
+        std::env::current_dir().unwrap().display()
+    );
     eprintln!("Loading neural network (20x256)");
-    let mut model = tch::CModule::load("Net_10x128.pt").expect("model is not in path");
+    let mut model =
+        tch::CModule::load("/home/tt/Documents/tigon/Net_10x128.pt").expect("model is not in path");
     model.set_eval();
     let model = Arc::new(model);
+
+	let mut history = mcts::HistoryTable::new();
+
+    let mut log_file = std::fs::File::create("/tmp/tigon_log.txt").expect("cannot make log file");
 
     let tables = Arc::new(Mutex::new({
         let mut t = Tablebase::new();
@@ -54,7 +62,12 @@ fn main() -> Result<(), PlayError<Chess>> {
                         (
                             new_pos,
                             mov,
-                            mcts::Node::new(0.0, prior, mcts::turn_to_side(turn), Some(pos.clone())),
+                            mcts::Node::new(
+                                0.0,
+                                prior,
+                                mcts::turn_to_side(turn),
+                                Some(pos.clone()),
+                            ),
                         )
                     })
                     .collect::<Vec<_>>(),
@@ -75,7 +88,7 @@ fn main() -> Result<(), PlayError<Chess>> {
         let inference = inference.clone();
         let tables = tables.clone();
         thread::spawn(move || 'outer: loop {
-            let (pos, time_control, multipv): (Chess, Option<UciTimeControl>, u8) =
+            let (pos, time_control, multipv, history): (Chess, Option<UciTimeControl>, u8, mcts::HistoryTable<Board>) =
                 rx.recv().unwrap();
             should_stop.store(false, Ordering::Relaxed);
 
@@ -129,28 +142,25 @@ fn main() -> Result<(), PlayError<Chess>> {
                         "bestmove {}",
                         mov.0.to_uci(pos.castles().mode()).to_string()
                     );
-					continue;
+                    continue;
                 }
             }
 
-			// look for mate in 1
-			let legals = pos.legal_moves();
-			for mov in legals {
-				let mut new_pos = pos.clone();
-				new_pos.play_unchecked(&mov);
-				if let Some(Outcome::Decisive { .. }) = new_pos.outcome() {
-					// mate in 1 found
-					println!(
-                        "info depth 2 multipv 1 score mate 1 pv {}",
-						mov.to_uci(pos.castles().mode()).to_string()
-                    );
+            // look for mate in 1
+            let legals = pos.legal_moves();
+            for mov in legals {
+                let mut new_pos = pos.clone();
+                new_pos.play_unchecked(&mov);
+                if let Some(Outcome::Decisive { .. }) = new_pos.outcome() {
+                    // mate in 1 found
                     println!(
-                        "bestmove {}",
+                        "info depth 2 multipv 1 score mate 1 pv {}",
                         mov.to_uci(pos.castles().mode()).to_string()
                     );
-					continue 'outer;
-				}
-			}
+                    println!("bestmove {}", mov.to_uci(pos.castles().mode()).to_string());
+                    continue 'outer;
+                }
+            }
 
             tch::no_grad(|| {
                 for i in 0.. {
@@ -158,6 +168,7 @@ fn main() -> Result<(), PlayError<Chess>> {
                         Some(&tables.lock().unwrap()),
                         inference.clone(),
                         &mut tbhits,
+						history.clone(),
                     )
                     .unwrap();
                     if should_stop.load(Ordering::Relaxed) {
@@ -175,18 +186,12 @@ fn main() -> Result<(), PlayError<Chess>> {
                         let mut all_pvs = mcts.all_pvs();
                         all_pvs.sort_by(|b, a| a.0.cmp(&b.0));
                         all_pvs.truncate(multipv as usize);
-                        let max_root_score = all_pvs
-                            .iter()
-                            .max_by_key(|e| (e.1 * 1000.0) as i32)
-                            .unwrap()
-                            .1;
-                        let max_root_score = mcts::q_to_cp(max_root_score);
                         for (multipv, (_, score, pv)) in all_pvs.into_iter().enumerate() {
                             println!(
 								"info depth {} multipv {} score cp {} nodes {} nps {} hashfull {} tbhits {} pv {}",
 								mcts.get_depth(),
 								multipv + 1,
-							    if multipv == 0 { max_root_score } else { mcts::q_to_cp(score) },
+							    mcts::q_to_cp(score),
 								i,
 								(i as f32 / now.elapsed().as_secs_f32()) as u32,
 								(mcts.total_size() as f32 / (40000.0 * 20.0) * 1000.0) as usize,
@@ -248,19 +253,22 @@ fn main() -> Result<(), PlayError<Chess>> {
 
     for line in io::stdin().lock().lines() {
         let line = line.unwrap();
+        writeln!(log_file, "{}", line).ok();
         let msg: UciMessage = parse_one(&line);
         match msg {
             UciMessage::Uci => {
                 println!("id name TigonNN");
+                println!("id author Aspect8445");
                 //println!("option name UCI_Variant type string default <empty>");
                 println!("option name UCI_Chess960 type check default false");
                 println!("option name SyzygyPath type string default <empty>");
                 println!("option name MultiPV type spin default 1 min 1 max 255");
                 println!("uciok")
-            },
-			UciMessage::UciNewGame => {
-				mcts.lock().unwrap().clear(inference.clone());
-			},
+            }
+            UciMessage::UciNewGame => {
+                mcts.lock().unwrap().clear(inference.clone());
+				history.clear();
+            }
             UciMessage::SetOption { name, value } => {
                 if name == "UCI_Chess960" {
                     if &value.unwrap() == "true" {
@@ -302,20 +310,24 @@ fn main() -> Result<(), PlayError<Chess>> {
                         .expect("bad fen");
                 }
 
+				history.clear();
+				history.entry(pos.board().clone()).and_modify(|counter| *counter += 1).or_insert(1);
+
                 for mov in moves {
                     let uci = mov.to_string();
                     let uci: Uci = uci.parse().expect("bad uci");
                     let m = uci.to_move(&pos).expect("bad move");
                     pos.play_unchecked(&m);
+					history.entry(pos.board().clone()).and_modify(|counter| *counter += 1).or_insert(1);
                 }
 
                 mcts.lock().unwrap().set_root(&pos, inference.clone());
             }
             UciMessage::Go { time_control, .. } => {
-                tx.send((pos.clone(), time_control, multipv)).unwrap();
+                tx.send((pos.clone(), time_control, multipv, history.clone())).unwrap();
             }
             UciMessage::IsReady => println!("readyok"),
-            UciMessage::Quit => break,
+            UciMessage::Quit => std::process::exit(0),
             UciMessage::Stop => {
                 should_stop.store(true, Ordering::Relaxed);
             }
