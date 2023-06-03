@@ -88,7 +88,7 @@ fn main() -> Result<(), PlayError<Chess>> {
         let inference = inference.clone();
         let tables = tables.clone();
         thread::spawn(move || 'outer: loop {
-            let (pos, time_control, multipv, history): (Chess, Option<UciTimeControl>, u8, mcts::HistoryTable<Board>) =
+            let (pos, time_control, multipv, history): (Chess, Option<UciTimeControl>, u8, mcts::HistoryTable<mcts::FideHash>) =
                 rx.recv().unwrap();
             should_stop.store(false, Ordering::Relaxed);
 
@@ -311,14 +311,14 @@ fn main() -> Result<(), PlayError<Chess>> {
                 }
 
 				history.clear();
-				history.entry(pos.board().clone()).and_modify(|counter| *counter += 1).or_insert(1);
+				history.entry(mcts::fide_hash(pos.clone())).and_modify(|counter| *counter += 1).or_insert(1);
 
                 for mov in moves {
                     let uci = mov.to_string();
                     let uci: Uci = uci.parse().expect("bad uci");
                     let m = uci.to_move(&pos).expect("bad move");
                     pos.play_unchecked(&m);
-					history.entry(pos.board().clone()).and_modify(|counter| *counter += 1).or_insert(1);
+					history.entry(mcts::fide_hash(pos.clone())).and_modify(|counter| *counter += 1).or_insert(1);
                 }
 
                 mcts.lock().unwrap().set_root(&pos, inference.clone());

@@ -7,6 +7,9 @@ use std::hash::Hash;
 use std::num::NonZeroU32;
 use std::sync::Arc;
 
+pub mod hasher;
+pub use hasher::*;
+
 pub const C_PUCT: f32 = 1.75;
 
 pub fn turn_to_side(color: Color) -> i8 {
@@ -178,7 +181,7 @@ impl<B: Position + Syzygy + Clone + Eq + PartialEq + Hash + std::fmt::Debug> MCT
         tablebase: Option<&Tablebase<B>>,
         model: Arc<P>,
         tbhits: &mut usize,
-		mut history: HistoryTable<Board>,
+		mut history: HistoryTable<FideHash>,
     ) -> Result<(), PlayError<B>> {
         let mut search_path = vec![self.root.clone()];
         let mut curr_node = self.root.clone();
@@ -205,8 +208,8 @@ impl<B: Position + Syzygy + Clone + Eq + PartialEq + Hash + std::fmt::Debug> MCT
             child.visits += 1;
             search_path.push(child.pos.clone());
             curr_node = child.pos.clone();
-			history.entry(child.pos.board().clone()).and_modify(|counter| *counter += 1).or_insert(1);
-			if let Some(cnt) = history.get(&search_path.last().unwrap().board()) {
+			history.entry(fide_hash(child.pos.clone())).and_modify(|counter| *counter += 1).or_insert(1);
+			if let Some(cnt) = history.get(&fide_hash(search_path.last().unwrap().clone())) {
 				if *cnt >= 2 {
 					is_repetition = true;
 					break;
