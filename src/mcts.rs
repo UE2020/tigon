@@ -10,7 +10,7 @@ use std::sync::Arc;
 pub mod hasher;
 pub use hasher::*;
 
-pub const C_PUCT: f32 = 1.75;
+pub const C_PUCT: f32 = 1.2;
 
 pub fn turn_to_side(color: Color) -> i8 {
     match color {
@@ -312,10 +312,7 @@ impl<B: Position + Syzygy + Clone + Eq + PartialEq + Hash + std::fmt::Debug> MCT
             .iter()
             .find(|p| p.pos == *parent)
             .expect("no parent found");
-        let base = 38739.0;
-        let factor = 3.894;
-        let final_cpuct = c_puct + factor + ((child_ref.visits as f32 + base) / base).ln();
-        let prior_score = parent_ref.prior * final_cpuct * (parent_node.visit_count as f32).sqrt()
+        let prior_score = parent_ref.prior * c_puct * (parent_node.visit_count as f32).sqrt()
             / (child_ref.visits as f32 + 1.0);
         let value_score = if child_node.visit_count > 0 {
             (-child_node.value()) / 2.0 + 0.5

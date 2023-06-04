@@ -28,7 +28,7 @@ fn main() -> Result<(), PlayError<Chess>> {
     );
     eprintln!("Loading neural network (20x256)");
     let mut model =
-        tch::CModule::load("/home/tt/Documents/tigon/Net_10x128.pt").expect("model is not in path");
+        tch::CModule::load("Net_10x128.pt").expect("model is not in path");
     model.set_eval();
     let model = Arc::new(model);
 
@@ -259,7 +259,6 @@ fn main() -> Result<(), PlayError<Chess>> {
             UciMessage::Uci => {
                 println!("id name TigonNN");
                 println!("id author Aspect8445");
-                //println!("option name UCI_Variant type string default <empty>");
                 println!("option name UCI_Chess960 type check default false");
                 println!("option name SyzygyPath type string default <empty>");
                 println!("option name MultiPV type spin default 1 min 1 max 255");
@@ -280,6 +279,9 @@ fn main() -> Result<(), PlayError<Chess>> {
                 } else if name == "SyzygyPath" {
                     match value {
                         Some(value) => {
+							if &value == "<empty>" {
+								*tables.lock().unwrap() = Tablebase::new();
+							}
                             tables
                                 .lock()
                                 .unwrap()
