@@ -108,11 +108,15 @@ fn main() -> Result<(), PlayError<Chess>> {
                             Color::Black => black_time.unwrap().to_std().unwrap(),
                         };
 
-                        (time_left / 30).min(Duration::from_secs(60))
+						if pos.fullmoves().get() > 10 {
+							(time_left / 30).min(Duration::from_secs(60))
                             + white_increment
                                 .unwrap_or(vampirc_uci::Duration::milliseconds(0))
                                 .to_std()
                                 .unwrap()
+						} else {
+							Duration::from_secs(3)
+						}
                     }
                     _ => Duration::from_millis(3.6e+6 as u64),
                 },
