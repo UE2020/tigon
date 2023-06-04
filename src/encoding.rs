@@ -198,18 +198,26 @@ pub fn encode_positions<B: Position>(positions: &[B]) -> EncodedPositions {
 
 #[allow(unused_assignments)]
 pub fn move_to_idx(mov: &Move, flip: bool) -> (isize, isize, isize) {
-    if mov.from().is_none() {
-        return (0, 0, 0);
-    }
+	let (from, to) = match mov {
+		Move::Castle { king, rook } => {
+			(*king, match mov.castling_side().unwrap() {
+				CastlingSide::KingSide => rook.offset(-1).unwrap(),
+				CastlingSide::QueenSide => rook.offset(1).unwrap(),
+			})
+		},
+		m => (m.from().unwrap(), m.to())
+	};
+	
     let (from_rank, from_file) = icoords(if flip {
-        Square::new((mov.from().unwrap() as u8 ^ 0x38) as u32)
+        Square::new((from as u8 ^ 0x38) as u32)
     } else {
-        mov.from().unwrap()
+        from
     });
+
     let (to_rank, to_file) = icoords(if flip {
-        Square::new((mov.to() as u8 ^ 0x38) as u32)
+        Square::new((to as u8 ^ 0x38) as u32)
     } else {
-        mov.to()
+        to
     });
 
     let mut direction_plane = 0;
