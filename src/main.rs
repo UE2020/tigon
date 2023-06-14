@@ -28,7 +28,7 @@ fn main() -> Result<(), PlayError<Chess>> {
     );
     eprintln!("Loading neural network (20x256)");
     let mut model =
-        tch::CModule::load("Net_10x128.pt").expect("model is not in path");
+        tch::CModule::load("/home/tt/Documents/tigon/Net_10x128.pt").expect("model is not in path");
     model.set_eval();
     let model = Arc::new(model);
 
@@ -68,6 +68,7 @@ fn main() -> Result<(), PlayError<Chess>> {
                                 mcts::turn_to_side(turn),
                                 Some(pos.clone()),
                             ),
+							prior
                         )
                     })
                     .collect::<Vec<_>>(),
@@ -94,7 +95,7 @@ fn main() -> Result<(), PlayError<Chess>> {
 
             let mut mcts = mcts.lock().unwrap();
 
-            let target = match time_control {
+            let mut target = match time_control {
                 Some(time) => match time {
                     UciTimeControl::MoveTime(duration) => duration.to_std().unwrap(),
                     UciTimeControl::TimeLeft {
@@ -108,12 +109,17 @@ fn main() -> Result<(), PlayError<Chess>> {
                             Color::Black => black_time.unwrap().to_std().unwrap(),
                         };
 
+						let increment = white_increment
+							.unwrap_or(vampirc_uci::Duration::milliseconds(0))
+							.to_std()
+							.unwrap();
+
 						if pos.fullmoves().get() > 10 {
-							(time_left / 30).min(Duration::from_secs(60))
-                            + white_increment
-                                .unwrap_or(vampirc_uci::Duration::milliseconds(0))
-                                .to_std()
-                                .unwrap()
+							if pos.fullmoves().get() > 40 {
+								time_left / 20 + (increment / 2)
+							} else {
+								time_left / (40 - pos.fullmoves().get()) + (increment / 2)
+							}
 						} else {
 							Duration::from_secs(3)
 						}
@@ -166,6 +172,7 @@ fn main() -> Result<(), PlayError<Chess>> {
                 }
             }
 
+			let mut was_extended = false;
             tch::no_grad(|| {
                 for i in 0.. {
                     mcts.rollout(
@@ -185,7 +192,14 @@ fn main() -> Result<(), PlayError<Chess>> {
                         .map(|m| m.to_uci(pos.castles().mode()).to_string())
                         .collect::<Vec<_>>()
                         .join(" ");
-                    let passed = now.elapsed() >= target;
+					let has_elapsed = now.elapsed() >= target;
+					if has_elapsed {
+						if mcts.is_critical() && !was_extended {
+							was_extended = true;
+							target += target / 2;
+						}
+					}
+                    let passed = now.elapsed() >= target || (now.elapsed() >= (target/2) && mcts.is_easy());
                     if last_pv.as_ref() != Some(&current_pv) || passed || i % 150 == 0 {
                         let mut all_pvs = mcts.all_pvs();
                         all_pvs.sort_by(|b, a| a.0.cmp(&b.0));

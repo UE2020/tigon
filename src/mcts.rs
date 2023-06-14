@@ -36,14 +36,16 @@ pub struct ChildPointer<B> {
     pos: B,
     mov: Move,
     visits: u32,
+	prior: f32,
 }
 
 impl<B> ChildPointer<B> {
-    pub fn new(pos: B, mov: Move) -> ChildPointer<B> {
+    pub fn new(pos: B, mov: Move, prior: f32) -> ChildPointer<B> {
         Self {
             pos,
             mov,
             visits: 0,
+			prior
         }
     }
 }
@@ -95,7 +97,7 @@ pub struct MCTSTree<B: Position + Syzygy + Clone + Eq + PartialEq + Hash + std::
 }
 
 impl<B: Position + Syzygy + Clone + Eq + PartialEq + Hash + std::fmt::Debug> MCTSTree<B> {
-    pub fn new<P: Fn(&B) -> (f32, Vec<(B, Move, Node<B>)>)>(root_pos: &B, model: Arc<P>) -> Self {
+    pub fn new<P: Fn(&B) -> (f32, Vec<(B, Move, Node<B>, f32)>)>(root_pos: &B, model: Arc<P>) -> Self {
         let mut tree = Self {
             root: root_pos.clone(),
             root_ply_counter: root_pos.fullmoves(),
@@ -108,7 +110,7 @@ impl<B: Position + Syzygy + Clone + Eq + PartialEq + Hash + std::fmt::Debug> MCT
         tree
     }
 
-    pub fn set_root<P: Fn(&B) -> (f32, Vec<(B, Move, Node<B>)>)>(
+    pub fn set_root<P: Fn(&B) -> (f32, Vec<(B, Move, Node<B>, f32)>)>(
         &mut self,
         root_pos: &B,
         model: Arc<P>,
@@ -142,7 +144,7 @@ impl<B: Position + Syzygy + Clone + Eq + PartialEq + Hash + std::fmt::Debug> MCT
         }
     }
 
-    pub fn expand_node<P: Fn(&B) -> (f32, Vec<(B, Move, Node<B>)>)>(
+    pub fn expand_node<P: Fn(&B) -> (f32, Vec<(B, Move, Node<B>, f32)>)>(
         &mut self,
         node: &B,
         prior: Arc<P>,
@@ -153,14 +155,14 @@ impl<B: Position + Syzygy + Clone + Eq + PartialEq + Hash + std::fmt::Debug> MCT
             expanding_node.children = Some(
                 new_nodes
                     .iter()
-                    .map(|(pos, m, _)| RefCell::new(ChildPointer::new(pos.clone(), m.clone())))
+                    .map(|(pos, m, _, prior)| RefCell::new(ChildPointer::new(pos.clone(), m.clone(), *prior)))
                     .collect::<Vec<_>>(),
             );
-            for (pos, _, new_node) in new_nodes {
+            for (pos, _, new_node, prior) in new_nodes {
                 if let Some(extant_node) = self.nodes.get_mut(&pos) {
                     extant_node
                         .parents
-                        .push(ParentPointer::new(node.clone(), new_node.parents[0].prior));
+                        .push(ParentPointer::new(node.clone(), prior));
                 } else {
                     self.nodes.insert(pos, new_node);
                 }
@@ -176,7 +178,7 @@ impl<B: Position + Syzygy + Clone + Eq + PartialEq + Hash + std::fmt::Debug> MCT
     }
 
 	// position fen r5k1/pp4pp/1n2pp2/8/1Q2P3/Pb1rBP2/2q1BKPP/RR6 w - - 14 31 moves b1c1 c2b2 a1b1 b2a2 b1a1 a2b2 a1b1 b2a2 
-    pub fn rollout<P: Fn(&B) -> (f32, Vec<(B, Move, Node<B>)>)>(
+    pub fn rollout<P: Fn(&B) -> (f32, Vec<(B, Move, Node<B>, f32)>)>(
         &mut self,
         tablebase: Option<&Tablebase<B>>,
         model: Arc<P>,
@@ -404,9 +406,23 @@ impl<B: Position + Syzygy + Clone + Eq + PartialEq + Hash + std::fmt::Debug> MCT
         self.nodes.len()
     }
 
-    pub fn clear<P: Fn(&B) -> (f32, Vec<(B, Move, Node<B>)>)>(&mut self, model: Arc<P>) {
+    pub fn clear<P: Fn(&B) -> (f32, Vec<(B, Move, Node<B>, f32)>)>(&mut self, model: Arc<P>) {
         *self = Self::new(&self.root, model);
     }
+
+	pub fn is_easy(&self) -> bool {
+		let root = self.nodes.get(&self.root).unwrap();
+		let best_prior = root.children.as_ref().unwrap().iter().max_by(|a, b| a.borrow().visits.cmp(&b.borrow().visits)).unwrap();
+
+		best_prior.borrow().prior >= 0.9
+	}
+
+	pub fn is_critical(&self) -> bool {
+		let root = self.nodes.get(&self.root).unwrap();
+		let best_prior = root.children.as_ref().unwrap().iter().max_by(|a, b| a.borrow().visits.cmp(&b.borrow().visits)).unwrap();
+		let child = self.nodes.get(&best_prior.borrow().pos).unwrap();
+		(root.value()+1.0/2.0) - ((-child.value())+1.0/2.0) >= 0.1
+	}
 }
 
 pub fn q_to_cp(q: f32) -> i32 {
