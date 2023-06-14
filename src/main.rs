@@ -28,7 +28,7 @@ fn main() -> Result<(), PlayError<Chess>> {
     );
     eprintln!("Loading neural network (20x256)");
     let mut model =
-        tch::CModule::load("/home/tt/Documents/tigon/Net_10x128.pt").expect("model is not in path");
+        tch::CModule::load("Net_10x128.pt").expect("model is not in path");
     model.set_eval();
     let model = Arc::new(model);
 
