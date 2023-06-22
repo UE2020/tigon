@@ -67,7 +67,7 @@ fn main() -> Result<(), PlayError<Chess>> {
                     encoding::legal_move_masks(pos).into_raw_vec(),
                     (Const::<4608>,),
                 ))
-            .softmax();
+            .softmax().array();
             let value = value_logits.array()[0];
             let mut move_probabilities = Vec::new();
             let movegen = pos.legal_moves();
