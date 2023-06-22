@@ -136,9 +136,9 @@ fn main() {
                     opt.cfg.lr /= 10.0;
                 }
 
-                if total_training_steps % 20 == 0 {
+                if total_training_steps % 100 == 0 {
                     model.save("testbed.npz").expect("failed to save model");
-                    println!("Saved model at {} steps", total_training_steps);
+                    //println!("Saved model at {} steps", total_training_steps);
                 }
                 // stack data
                 let data = img.stack();
