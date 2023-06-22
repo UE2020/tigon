@@ -14,7 +14,7 @@ use tensorboard_rs as tensorboard;
 
 use nn::*;
 
-const BATCH_SIZE: usize = 2048;
+const BATCH_SIZE: usize = 1024;
 
 fn main() {
     dfdx::flush_denormals_to_zero();
@@ -24,7 +24,7 @@ fn main() {
 
     let args: Vec<String> = std::env::args().collect();
 
-    let mut model = dev.build_module::<NetworkStructure<32, 4>, f32>();
+    let mut model = dev.build_module::<NetworkStructure<128, 10>, f32>();
     // model.load("model_testbed.npz").expect("failed to load model");
 
     // let pos: Chess = shakmaty::fen::Fen::from_ascii(args[1].as_bytes())
@@ -74,7 +74,7 @@ fn main() {
     let mut opt = Sgd::new(
         &model,
         SgdConfig {
-            lr: 0.01,
+            lr: 0.1,
             momentum: Some(Momentum::Nesterov(0.9)),
             weight_decay: Some(WeightDecay::L2(1e-4)),
             ..Default::default()
@@ -132,7 +132,7 @@ fn main() {
                 .progress()
             {
                 total_training_steps += 1;
-                if total_training_steps % 10000 == 0 {
+                if total_training_steps % 80000 == 0 {
                     opt.cfg.lr /= 10.0;
                 }
 
