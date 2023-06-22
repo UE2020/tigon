@@ -13,6 +13,6 @@ ndarray = "0.15.6"
 rand = "0.8.5"
 shakmaty = { version = "0.25.0", features=["variant"] }
 shakmaty-syzygy = "0.23.0"
-tch = "0.13.0"
+#tch = "0.13.0"
 vampirc-uci = { version = "0.11.1", git = "https://github.com/UE2020/vampirc-uci.git" }
 nn = { path = "../nn" }

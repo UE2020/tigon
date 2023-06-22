@@ -23,7 +23,7 @@ pub mod encoding;
 pub mod mcts;
 
 fn main() -> Result<(), PlayError<Chess>> {
-    tch::set_num_threads(4);
+    //tch::set_num_threads(4);
     eprintln!(
         "Current working directory: {}",
         std::env::current_dir().unwrap().display()
@@ -211,63 +211,61 @@ fn main() -> Result<(), PlayError<Chess>> {
             }
 
             let mut was_extended = false;
-            tch::no_grad(|| {
-                for i in 0.. {
-                    mcts.rollout(
-                        Some(&tables.lock().unwrap()),
-                        inference.clone(),
-                        &mut tbhits,
-                        history.clone(),
-                    )
-                    .unwrap();
-                    if should_stop.load(Ordering::Relaxed) {
-                        should_stop.store(false, Ordering::Relaxed);
-                        break;
-                    }
-                    let current_pv = mcts
-                        .pv()
-                        .iter()
-                        .map(|m| m.to_uci(pos.castles().mode()).to_string())
-                        .collect::<Vec<_>>()
-                        .join(" ");
-                    let has_elapsed = now.elapsed() >= target;
-                    if has_elapsed {
-                        if mcts.is_critical() && !was_extended {
-                            was_extended = true;
-                            target += target / 2;
-                        }
-                    }
-                    let passed = now.elapsed() >= target
-                        || (now.elapsed() >= (target / 2) && mcts.is_easy());
-                    if last_pv.as_ref() != Some(&current_pv) || passed || i % 150 == 0 {
-                        let mut all_pvs = mcts.all_pvs();
-                        all_pvs.sort_by(|b, a| a.0.cmp(&b.0));
-                        all_pvs.truncate(multipv as usize);
-                        for (multipv, (_, score, pv)) in all_pvs.into_iter().enumerate() {
-                            println!(
-								"info depth {} multipv {} score cp {} nodes {} nps {} hashfull {} tbhits {} pv {}",
-								mcts.get_depth(),
-								multipv + 1,
-							    mcts::q_to_cp(score),
-								i,
-								(i as f32 / now.elapsed().as_secs_f32()) as u32,
-								(mcts.total_size() as f32 / (40000.0 * 20.0) * 1000.0) as usize,
-								tbhits,
-								pv.iter()
-								.map(|m| m.to_uci(pos.castles().mode()).to_string())
-								.collect::<Vec<_>>()
-								.join(" ")
-							);
-                        }
+            for i in 0.. {
+				mcts.rollout(
+					Some(&tables.lock().unwrap()),
+					inference.clone(),
+					&mut tbhits,
+					history.clone(),
+				)
+				.unwrap();
+				if should_stop.load(Ordering::Relaxed) {
+					should_stop.store(false, Ordering::Relaxed);
+					break;
+				}
+				let current_pv = mcts
+					.pv()
+					.iter()
+					.map(|m| m.to_uci(pos.castles().mode()).to_string())
+					.collect::<Vec<_>>()
+					.join(" ");
+				let has_elapsed = now.elapsed() >= target;
+				if has_elapsed {
+					if mcts.is_critical() && !was_extended {
+						was_extended = true;
+						target += target / 2;
+					}
+				}
+				let passed = now.elapsed() >= target
+					|| (now.elapsed() >= (target / 2) && mcts.is_easy());
+				if last_pv.as_ref() != Some(&current_pv) || passed || i % 150 == 0 {
+					let mut all_pvs = mcts.all_pvs();
+					all_pvs.sort_by(|b, a| a.0.cmp(&b.0));
+					all_pvs.truncate(multipv as usize);
+					for (multipv, (_, score, pv)) in all_pvs.into_iter().enumerate() {
+						println!(
+							"info depth {} multipv {} score cp {} nodes {} nps {} hashfull {} tbhits {} pv {}",
+							mcts.get_depth(),
+							multipv + 1,
+							mcts::q_to_cp(score),
+							i,
+							(i as f32 / now.elapsed().as_secs_f32()) as u32,
+							(mcts.total_size() as f32 / (40000.0 * 20.0) * 1000.0) as usize,
+							tbhits,
+							pv.iter()
+							.map(|m| m.to_uci(pos.castles().mode()).to_string())
+							.collect::<Vec<_>>()
+							.join(" ")
+						);
+					}
 
-                        last_pv = Some(current_pv);
-                    }
+					last_pv = Some(current_pv);
+				}
 
-                    if passed {
-                        break;
-                    }
-                }
-            });
+				if passed {
+					break;
+				}
+			}
 
             let san_pv = mcts
                 .pv()
