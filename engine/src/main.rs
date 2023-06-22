@@ -81,7 +81,7 @@ fn main() -> Result<(), PlayError<Chess>> {
 
                 let (plane_idx, rank_idx, file_idx) = encoding::move_to_idx(&mov, flip);
                 let mov_idx = plane_idx * 64 + rank_idx * 8 + file_idx;
-                move_probabilities.push((mov, policy[[mov_idx as usize]]));
+                move_probabilities.push((mov, policy[mov_idx as usize]));
             }
             (
                 value,
