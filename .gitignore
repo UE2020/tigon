@@ -1,2 +1,5 @@
 /target
-/tables
+engine/tables
+nn/data
+engine/*.pt
+*.npz
