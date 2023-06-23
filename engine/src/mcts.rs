@@ -328,7 +328,7 @@ impl<B: Position + Syzygy + Clone + Eq + PartialEq + Hash + std::fmt::Debug> MCT
         let base = 38739.0;
         let factor = 3.894;
         let final_cpuct = c_puct + factor + ((child_ref.visits as f32 + base) / base).ln();
-        let prior_score = parent_ref.prior * c_puct * (parent_node.visit_count as f32).sqrt()
+        let prior_score = parent_ref.prior * final_cpuct * (parent_node.visit_count as f32).sqrt()
             / (child_ref.visits as f32 + 1.0);
         let value_score = if child_node.visit_count > 0 {
             (-child_node.value()) / 2.0 + 0.5
@@ -352,6 +352,9 @@ impl<B: Position + Syzygy + Clone + Eq + PartialEq + Hash + std::fmt::Debug> MCT
                 .nodes
                 .get(&default_hash(&curr_node))
                 .expect("node not found");
+            if node.visit_count == 0 {
+                break;
+            }
             let child = node
                 .children
                 .as_ref()
@@ -380,19 +383,18 @@ impl<B: Position + Syzygy + Clone + Eq + PartialEq + Hash + std::fmt::Debug> MCT
     pub fn all_pvs(&self) -> Vec<(u32, f32, Vec<Move>)> {
         let mut pvs = vec![];
         let moves = self.root.legal_moves();
-        for mov in moves {
+        let root = &self.nodes[&default_hash(&self.root)];
+        for child in root.children.as_ref().unwrap().iter() {
+            let child = child.borrow();
             let mut new_pos = self.root.clone();
-            new_pos.play_unchecked(&mov);
-            let child = self
-                .nodes
-                .get(&default_hash(&new_pos))
-                .expect("no children at root");
-            if child.visit_count == 0 {
+            new_pos.play_unchecked(&child.mov);
+            if child.visits == 0 {
                 continue;
             }
-            let mut new_pv = vec![mov.clone()];
+            let mut new_pv = vec![child.mov.clone()];
             new_pv.extend_from_slice(&self.pv_from_node(new_pos.clone()));
-            pvs.push((child.visit_count, (-child.value()) / 2.0 + 0.5, new_pv));
+            let child_node = &self.nodes[&child.pos];
+            pvs.push((child.visits, (-child_node.value()) / 2.0 + 0.5, new_pv));
         }
 
         pvs

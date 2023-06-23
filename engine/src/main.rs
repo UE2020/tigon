@@ -67,7 +67,8 @@ fn main() -> Result<(), PlayError<Chess>> {
                     encoding::legal_move_masks(pos).into_raw_vec(),
                     (Const::<4608>,),
                 ))
-            .softmax().array();
+            .softmax()
+            .array();
             let value = value_logits.array()[0];
             let mut move_probabilities = Vec::new();
             let movegen = pos.legal_moves();
@@ -152,14 +153,10 @@ fn main() -> Result<(), PlayError<Chess>> {
                             .to_std()
                             .unwrap();
 
-                        if pos.fullmoves().get() > 10 {
-                            if pos.fullmoves().get() > 40 {
-                                time_left / 20 + (increment / 2)
-                            } else {
-                                time_left / (40 - pos.fullmoves().get()) + (increment / 2)
-                            }
+                        if pos.fullmoves().get() > 40 {
+                            time_left / 20 + (increment / 2)
                         } else {
-                            Duration::from_secs(3)
+                            time_left / (40 - pos.fullmoves().get()) + (increment / 2)
                         }
                     }
                     _ => Duration::from_millis(3.6e+6 as u64),
@@ -212,38 +209,38 @@ fn main() -> Result<(), PlayError<Chess>> {
 
             let mut was_extended = false;
             for i in 0.. {
-				mcts.rollout(
-					Some(&tables.lock().unwrap()),
-					inference.clone(),
-					&mut tbhits,
-					history.clone(),
-				)
-				.unwrap();
-				if should_stop.load(Ordering::Relaxed) {
-					should_stop.store(false, Ordering::Relaxed);
-					break;
-				}
-				let current_pv = mcts
-					.pv()
-					.iter()
-					.map(|m| m.to_uci(pos.castles().mode()).to_string())
-					.collect::<Vec<_>>()
-					.join(" ");
-				let has_elapsed = now.elapsed() >= target;
-				if has_elapsed {
-					if mcts.is_critical() && !was_extended {
-						was_extended = true;
-						target += target / 2;
-					}
-				}
-				let passed = now.elapsed() >= target
-					|| (now.elapsed() >= (target / 2) && mcts.is_easy());
-				if last_pv.as_ref() != Some(&current_pv) || passed || i % 150 == 0 {
-					let mut all_pvs = mcts.all_pvs();
-					all_pvs.sort_by(|b, a| a.0.cmp(&b.0));
-					all_pvs.truncate(multipv as usize);
-					for (multipv, (_, score, pv)) in all_pvs.into_iter().enumerate() {
-						println!(
+                mcts.rollout(
+                    Some(&tables.lock().unwrap()),
+                    inference.clone(),
+                    &mut tbhits,
+                    history.clone(),
+                )
+                .unwrap();
+                if should_stop.load(Ordering::Relaxed) {
+                    should_stop.store(false, Ordering::Relaxed);
+                    break;
+                }
+                let current_pv = mcts
+                    .pv()
+                    .iter()
+                    .map(|m| m.to_uci(pos.castles().mode()).to_string())
+                    .collect::<Vec<_>>()
+                    .join(" ");
+                let has_elapsed = now.elapsed() >= target;
+                if has_elapsed {
+                    if mcts.is_critical() && !was_extended {
+                        was_extended = true;
+                        target += target / 2;
+                    }
+                }
+                let passed =
+                    now.elapsed() >= target || (now.elapsed() >= (target / 2) && mcts.is_easy());
+                if last_pv.as_ref() != Some(&current_pv) || passed || i % 150 == 0 {
+                    let mut all_pvs = mcts.all_pvs();
+                    all_pvs.sort_by(|b, a| a.0.cmp(&b.0));
+                    all_pvs.truncate(multipv as usize);
+                    for (multipv, (_, score, pv)) in all_pvs.into_iter().enumerate() {
+                        println!(
 							"info depth {} multipv {} score cp {} nodes {} nps {} hashfull {} tbhits {} pv {}",
 							mcts.get_depth(),
 							multipv + 1,
@@ -257,15 +254,15 @@ fn main() -> Result<(), PlayError<Chess>> {
 							.collect::<Vec<_>>()
 							.join(" ")
 						);
-					}
+                    }
 
-					last_pv = Some(current_pv);
-				}
+                    last_pv = Some(current_pv);
+                }
 
-				if passed {
-					break;
-				}
-			}
+                if passed {
+                    break;
+                }
+            }
 
             let san_pv = mcts
                 .pv()

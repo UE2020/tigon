@@ -24,7 +24,7 @@ fn main() {
 
     let args: Vec<String> = std::env::args().collect();
 
-    let mut model = dev.build_module::<NetworkStructure<128, 10>, f32>();
+    let mut model = dev.build_module::<NetworkStructure<32, 4>, f32>();
     // model.load("model_testbed.npz").expect("failed to load model");
 
     // let pos: Chess = shakmaty::fen::Fen::from_ascii(args[1].as_bytes())
@@ -97,7 +97,7 @@ fn main() {
 
     let mut writer = tensorboard::summary_writer::SummaryWriter::new("logdir");
 
-	let mut total_training_steps = 0;
+    let mut total_training_steps = 0;
 
     for i_epoch in 0..7 {
         let file =

@@ -15,7 +15,7 @@ path = "src/bin.rs"
 
 [dependencies]
 shakmaty = { version = "0.26.0" }
-dfdx = { version = "0.11.2", features = ["nightly", "numpy", "cuda"] }
+dfdx = { version = "0.11.2", features = ["nightly", "numpy"] }
 indicatif = "0.17.5"
 rand = "0.8.5"
 ndarray = "0.15.6"

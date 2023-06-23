@@ -27,4 +27,5 @@ pub type PolicyHead<const FILTERS: usize> = (
     (Flatten2D, Linear<128, 4608>),
 );
 
-pub type Model<const FILTERS: usize, const BLOCKS: usize> = <NetworkStructure<FILTERS, BLOCKS> as BuildOnDevice<AutoDevice, f64>>::Built;
+pub type Model<const FILTERS: usize, const BLOCKS: usize> =
+    <NetworkStructure<FILTERS, BLOCKS> as BuildOnDevice<AutoDevice, f64>>::Built;
