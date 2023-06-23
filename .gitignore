@@ -3,3 +3,4 @@ engine/tables
 nn/data
 engine/*.pt
 *.npz
+/logdir
