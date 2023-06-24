@@ -74,9 +74,9 @@ impl Visitor for PgnVisitor {
             } else if text.starts_with("#") {
                 1.0
             } else {
-                let pawns: f32 = text.parse().unwrap();
-				let eval = 50.0 + 50.0 * (2.0 / (1.0 + (-0.00368208 * (pawns * 100.0)).exp()) - 1.0);
-                eval * 2.0 - 1.0
+                let eval: f32 = text.parse().unwrap();
+                let q: f32 = 1.0 / (1.0 + (10.0f32).powf(-eval / 4.0));
+                q * 2.0 - 1.0
             }
         };
         let last = self.positions.last_mut().unwrap();
