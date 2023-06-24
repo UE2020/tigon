@@ -325,10 +325,10 @@ impl<B: Position + Syzygy + Clone + Eq + PartialEq + Hash + std::fmt::Debug> MCT
             .iter()
             .find(|p| p.pos == parent)
             .expect("no parent found");
-        let base = 38739.0;
-        let factor = 3.894;
-        let final_cpuct = c_puct + factor + ((child_ref.visits as f32 + base) / base).ln();
-        let prior_score = parent_ref.prior * final_cpuct * (parent_node.visit_count as f32).sqrt()
+        // let base = 38739.0;
+        // let factor = 3.894;
+        // let final_cpuct = c_puct + factor + ((child_ref.visits as f32 + base) / base).ln();
+        let prior_score = parent_ref.prior * c_puct * (parent_node.visit_count as f32).sqrt()
             / (child_ref.visits as f32 + 1.0);
         let value_score = if child_node.visit_count > 0 {
             (-child_node.value()) / 2.0 + 0.5
@@ -382,7 +382,6 @@ impl<B: Position + Syzygy + Clone + Eq + PartialEq + Hash + std::fmt::Debug> MCT
 
     pub fn all_pvs(&self) -> Vec<(u32, f32, Vec<Move>)> {
         let mut pvs = vec![];
-        let moves = self.root.legal_moves();
         let root = &self.nodes[&default_hash(&self.root)];
         for child in root.children.as_ref().unwrap().iter() {
             let child = child.borrow();
@@ -463,6 +462,7 @@ impl<B: Position + Syzygy + Clone + Eq + PartialEq + Hash + std::fmt::Debug> MCT
 }
 
 pub fn q_to_cp(q: f32) -> i32 {
-    let q = q * 2.0 - 1.0;
-    (-(q.signum() * (1.0 - q.abs()).ln() / (1.2f32).ln()) * 100.0 / 2.0) as i32
+    (-4.0 * (1.0 / q - 1.0).log10() * 100.0) as i32
+    // let q = q * 2.0 - 1.0;
+    // (-(q.signum() * (1.0 - q.abs()).ln() / (1.2f32).ln()) * 100.0 / 2.0) as i32
 }

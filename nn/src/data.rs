@@ -1,5 +1,6 @@
 use dfdx::data::*;
 use pgn_reader::*;
+use regex::Regex;
 use shakmaty::*;
 
 mod encoding;
@@ -7,27 +8,32 @@ pub use encoding::*;
 
 #[derive(Debug, Clone)]
 pub struct PgnVisitor {
-    positions: Vec<(Chess, Option<Move>)>,
-    outcome: Option<Outcome>,
+    positions: Vec<(Chess, Option<Move>, Option<f32>)>,
+    //outcome: Option<Outcome>,
+    re: Regex,
     termination_normal: bool,
+    total_elo: u16,
 }
 
 impl PgnVisitor {
     pub fn new() -> Self {
         Self {
             positions: vec![],
-            outcome: None,
+            //outcome: None,
             termination_normal: true,
+            re: Regex::new(r"([-+]|#)?[0-9]*\.?[0-9]+").unwrap(),
+            total_elo: 0,
         }
     }
 }
 
 impl Visitor for PgnVisitor {
-    type Result = Option<(Vec<(Chess, Move)>, Outcome)>;
+    type Result = Option<(u16, Vec<(Chess, Move, Option<f32>)>)>;
 
     fn begin_game(&mut self) {
-        self.positions = vec![(Chess::default(), None)];
+        self.positions = vec![(Chess::default(), None, None)];
         self.termination_normal = false;
+        self.total_elo = 0;
     }
 
     fn san(&mut self, san_plus: SanPlus) {
@@ -36,7 +42,7 @@ impl Visitor for PgnVisitor {
         last.1 = Some(mov.clone());
 
         let new_pos = last.0.clone().play(&mov).expect("invalid move");
-        self.positions.push((new_pos, None));
+        self.positions.push((new_pos, None, None));
     }
 
     fn begin_variation(&mut self) -> Skip {
@@ -46,12 +52,36 @@ impl Visitor for PgnVisitor {
     fn end_game(&mut self) -> Self::Result {
         let mut positions = self.positions.clone();
         positions.pop();
-        let positions = positions.into_iter().map(|(pos, mov)| (pos, mov.unwrap()));
-        Some((positions.collect(), self.outcome.unwrap()))
+        let positions = positions
+            .into_iter()
+            .map(|(pos, mov, eval)| (pos, mov.unwrap(), eval));
+        Some((self.total_elo / 2, positions.collect()))
     }
 
     fn outcome(&mut self, outcome: Option<Outcome>) {
-        self.outcome = outcome;
+        //self.outcome = outcome;
+    }
+
+    fn comment(&mut self, comment: RawComment<'_>) {
+        let comment = comment.as_bytes();
+        let comment = std::str::from_utf8(comment).expect("invalid utf8");
+        let captures = self.re.captures(comment).unwrap();
+        let matched_capture = captures.get(0).expect("no captures in comment");
+        let eval: f32 = {
+            let text = matched_capture.as_str();
+            if text.starts_with("#-") {
+                -1.0
+            } else if text.starts_with("#") {
+                1.0
+            } else {
+                let pawns: f32 = text.parse().unwrap();
+				let eval = 50.0 + 50.0 * (2.0 / (1.0 + (-0.00368208 * (pawns * 100.0)).exp()) - 1.0);
+                eval * 2.0 - 1.0
+            }
+        };
+        let last = self.positions.last_mut().unwrap();
+        last.2 = Some(eval);
+        //dbg!(q);
     }
 
     fn header(&mut self, key: &[u8], value: RawHeader<'_>) {
@@ -59,23 +89,35 @@ impl Visitor for PgnVisitor {
             if value.as_bytes() != b"Normal" {
                 self.termination_normal = true;
             }
+        } else if key == b"WhiteElo" || key == b"BlackElo" {
+            let elo = std::str::from_utf8(value.as_bytes())
+                .unwrap()
+                .parse::<u16>();
+            if let Ok(elo) = elo {
+                self.total_elo += elo;
+            }
         }
     }
 }
 
-use std::collections::HashSet;
-
-pub struct ChessPositionSet(Vec<((Chess, Move), Outcome)>);
+pub struct ChessPositionSet(Vec<(Chess, Move, f32)>);
 
 impl ChessPositionSet {
-    pub fn new(games: Vec<(Vec<(Chess, Move)>, Outcome)>) -> Self {
+    pub fn new(games: Vec<(u16, Vec<(Chess, Move, Option<f32>)>)>) -> Self {
         let mut positions = Vec::new();
         for game in games {
-            for (i, pos) in game.0.into_iter().enumerate() {
-                positions.push((pos, game.1));
+            for (_, pos) in game.1.into_iter().enumerate() {
+                positions.push((
+                    pos.0,
+                    pos.1,
+                    match pos.2 {
+                        None => continue,
+                        Some(eval) => eval,
+                    },
+                ));
             }
         }
-
+        dbg!(positions.len());
         Self(positions)
     }
 }
@@ -84,7 +126,7 @@ impl ExactSizeDataset for ChessPositionSet {
     // board, value, policy, mask
     type Item<'a> = (Vec<f32>, f32, Vec<f32>, Vec<f32>) where Self: 'a;
     fn get(&self, index: usize) -> Self::Item<'_> {
-        let ((pos, mov), outcome) = &self.0[index];
+        let (pos, mov, eval) = &self.0[index];
         let data = encode_positions(pos);
 
         // create policy output
@@ -95,12 +137,7 @@ impl ExactSizeDataset for ChessPositionSet {
 
         (
             data.into_raw_vec(),
-            match outcome {
-                Outcome::Decisive { winner } => {
-                    turn_to_side(*winner) as f32 * turn_to_side(pos.turn()) as f32
-                }
-                Outcome::Draw => 0.0,
-            },
+            turn_to_side(pos.turn()) as f32 * eval,
             output,
             legal_move_masks(pos).into_raw_vec(),
         )

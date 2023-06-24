@@ -2,6 +2,7 @@ pub use dfdx;
 use dfdx::prelude::*;
 
 pub mod data;
+pub mod visuals;
 
 pub type BasicBlock<const C: usize> = Residual<(
     Conv2D<C, C, 3, 1, 1>,

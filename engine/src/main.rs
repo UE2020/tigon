@@ -33,7 +33,7 @@ fn main() -> Result<(), PlayError<Chess>> {
     dfdx::flush_denormals_to_zero();
 
     let dev = AutoDevice::default();
-    let mut model = dev.build_module::<nn::NetworkStructure<32, 4>, f32>();
+    let mut model = dev.build_module::<nn::NetworkStructure<64, 5>, f32>();
     dbg!(model.num_trainable_params());
     model
         .load("/home/tt/Documents/tigon/testbed.npz")

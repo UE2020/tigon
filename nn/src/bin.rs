@@ -24,59 +24,59 @@ fn main() {
 
     let args: Vec<String> = std::env::args().collect();
 
-    let mut model = dev.build_module::<NetworkStructure<32, 4>, f32>();
-    // model.load("model_testbed.npz").expect("failed to load model");
+    let mut model = dev.build_module::<NetworkStructure<64, 5>, f32>();
+    model.load("testbed.npz").expect("failed to load model");
 
-    // let pos: Chess = shakmaty::fen::Fen::from_ascii(args[1].as_bytes())
-    //     .expect("bad fen")
-    //     .into_position(CastlingMode::Standard)
-    //     .expect("bad fen");
-    // dbg!(&args[1]);
-    // let data = data::encode_positions(&pos);
-    // let tensor = dev.tensor_from_vec(data.into_raw_vec(), (Const::<16>, Const::<8>, Const::<8>));
-    // let (value_logits, policy_logits) = model.forward(tensor);
-    // let policy = (policy_logits
-    //     * dev.tensor_from_vec(
-    //         data::legal_move_masks(&pos).into_raw_vec(),
-    //         (Const::<4608>,),
-    //     ))
-    // .softmax();
-    // println!(
-    //     "Q value: {:.2}%",
-    //     (value_logits.array()[0] / 2.0 + 0.5) * 100.0
-    // );
-    // let mut move_probabilities = Vec::new();
-    // let movegen = pos.legal_moves();
-    // for mov in movegen {
-    //     if let Some(p) = mov.promotion() {
-    //         if p != Role::Queen {
-    //             continue;
-    //         }
-    //     }
-    //     let flip = pos.turn() == Color::Black;
+    let pos: Chess = shakmaty::fen::Fen::from_ascii(args[1].as_bytes())
+        .expect("bad fen")
+        .into_position(CastlingMode::Standard)
+        .expect("bad fen");
+    dbg!(&args[1]);
+    let data = data::encode_positions(&pos);
+    let tensor = dev.tensor_from_vec(data.into_raw_vec(), (Const::<16>, Const::<8>, Const::<8>));
+    let (value_logits, policy_logits) = model.forward(tensor);
+    let policy = (policy_logits
+        * dev.tensor_from_vec(
+            data::legal_move_masks(&pos).into_raw_vec(),
+            (Const::<4608>,),
+        ))
+    .softmax();
+    println!(
+        "Q value: {:.2}%",
+        (value_logits.array()[0] / 2.0 + 0.5) * 100.0
+    );
+    let mut move_probabilities = Vec::new();
+    let movegen = pos.legal_moves();
+    for mov in movegen {
+        if let Some(p) = mov.promotion() {
+            if p != Role::Queen {
+                continue;
+            }
+        }
+        let flip = pos.turn() == Color::Black;
 
-    //     let (plane_idx, rank_idx, file_idx) = data::move_to_idx(&mov, flip);
-    //     let mov_idx = plane_idx * 64 + rank_idx * 8 + file_idx;
-    //     move_probabilities.push((mov, policy[[mov_idx as usize]]));
-    // }
+        let (plane_idx, rank_idx, file_idx) = data::move_to_idx(&mov, flip);
+        let mov_idx = plane_idx * 64 + rank_idx * 8 + file_idx;
+        move_probabilities.push((mov, policy[[mov_idx as usize]]));
+    }
 
-    // for (mov, prob) in move_probabilities {
-    //     println!(
-    //         "Move {}: {:.2}%",
-    //         San::from_move(&pos, &mov).to_string(),
-    //         prob * 100.0
-    //     );
-    // }
+    for (mov, prob) in move_probabilities {
+        println!(
+            "Move {}: {:.2}%",
+            San::from_move(&pos, &mov).to_string(),
+            prob * 100.0
+        );
+    }
 
-    // return;
+    return;
 
     let mut grads = model.alloc_grads();
-    let mut opt = Sgd::new(
+    let mut opt = Adam::new(
         &model,
-        SgdConfig {
-            lr: 0.1,
-            momentum: Some(Momentum::Nesterov(0.9)),
-            weight_decay: Some(WeightDecay::L2(1e-4)),
+        AdamConfig {
+            // lr: 0.1,
+            // momentum: Some(Momentum::Nesterov(0.9)),
+            // weight_decay: Some(WeightDecay::L2(1e-4)),
             ..Default::default()
         },
     );
@@ -100,8 +100,8 @@ fn main() {
     let mut total_training_steps = 0;
 
     for i_epoch in 0..7 {
-        let file =
-            File::open("nn/data/lichess_elite_2021-11.pgn").expect("training data not found");
+        let file = File::open("nn/data/lichess_db_standard_rated_2016-02.pgn")
+            .expect("training data not found");
         let mut reader = BufferedReader::new(file);
         let mut visitor = data::PgnVisitor::new();
 
@@ -111,10 +111,13 @@ fn main() {
             let mut num_batches = 0;
             let start = Instant::now();
             let mut games = vec![];
-            for _ in 0..50000 {
+            for _ in 0..1000000 {
                 if let Some(Some(result)) =
                     reader.read_game(&mut visitor).expect("failed to read game")
                 {
+                    if result.0 < 2200 {
+                        continue;
+                    }
                     games.push(result)
                 } else {
                     should_stop = true;
@@ -123,6 +126,7 @@ fn main() {
             }
 
             let dataset = data::ChessPositionSet::new(games);
+
             for (img, labels) in dataset
                 .shuffled(&mut rng)
                 .map(preprocess)
@@ -136,7 +140,7 @@ fn main() {
                     opt.cfg.lr /= 10.0;
                 }
 
-                if total_training_steps % 100 == 0 {
+                if total_training_steps % 20 == 0 {
                     model.save("testbed.npz").expect("failed to save model");
                     //println!("Saved model at {} steps", total_training_steps);
                 }
@@ -151,7 +155,7 @@ fn main() {
                 let policy = cross_entropy_with_logits_loss(logits.1 * masks.stack(), targets);
                 writer.add_scalar("Value loss", value.array(), total_training_steps as usize);
                 writer.add_scalar("Policy loss", policy.array(), total_training_steps as usize);
-                let loss = (value * 0.01) + policy;
+                let loss = value + policy;
 
                 writer.add_scalar("Training loss", loss.array(), total_training_steps as usize);
 
