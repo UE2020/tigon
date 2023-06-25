@@ -100,7 +100,7 @@ fn main() {
     let mut total_training_steps = 0;
 
     for i_epoch in 0..7 {
-        let file = File::open("nn/data/lichess_elite_2021-11.pgn")
+        let file = File::open("nn/data/lichess_elite_2021-10.pgn")
             .expect("training data not found");
         let mut reader = BufferedReader::new(file);
         let mut visitor = data::PgnVisitor::new();
