@@ -71,12 +71,12 @@ fn main() {
     // return;
 
     let mut grads = model.alloc_grads();
-    let mut opt = Sgd::new(
+    let mut opt = Adam::new(
         &model,
-        SgdConfig {
-            lr: 0.01,
-            momentum: Some(Momentum::Nesterov(0.9)),
-            weight_decay: Some(WeightDecay::L2(1e-4)),
+        AdamConfig {
+            // lr: 0.01,
+            // momentum: Some(Momentum::Nesterov(0.9)),
+            // weight_decay: Some(WeightDecay::L2(1e-4)),
             ..Default::default()
         },
     );
@@ -152,7 +152,7 @@ fn main() {
                 let policy = cross_entropy_with_logits_loss(logits.1 * masks.stack(), targets);
                 writer.add_scalar("Value loss", value.array(), total_training_steps as usize);
                 writer.add_scalar("Policy loss", policy.array(), total_training_steps as usize);
-                let loss = (value * 0.01) + policy;
+                let loss = value + policy;
 
                 writer.add_scalar("Training loss", loss.array(), total_training_steps as usize);
 
