@@ -152,7 +152,7 @@ fn main() {
                 let policy = cross_entropy_with_logits_loss(logits.1 * masks.stack(), targets);
                 writer.add_scalar("Value loss", value.array(), total_training_steps as usize);
                 writer.add_scalar("Policy loss", policy.array(), total_training_steps as usize);
-                let loss = value + policy;
+                let loss = (value * 0.01) + policy;
 
                 writer.add_scalar("Training loss", loss.array(), total_training_steps as usize);
 
