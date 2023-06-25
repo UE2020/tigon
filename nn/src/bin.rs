@@ -25,58 +25,58 @@ fn main() {
     let args: Vec<String> = std::env::args().collect();
 
     let mut model = dev.build_module::<NetworkStructure<64, 5>, f32>();
-    // model.load("testbed.npz").expect("failed to load model");
+    model.load("testbed.npz").expect("failed to load model");
 
-    // let pos: Chess = shakmaty::fen::Fen::from_ascii(args[1].as_bytes())
-    //     .expect("bad fen")
-    //     .into_position(CastlingMode::Standard)
-    //     .expect("bad fen");
-    // dbg!(&args[1]);
-    // let data = data::encode_positions(&pos);
-    // let tensor = dev.tensor_from_vec(data.into_raw_vec(), (Const::<16>, Const::<8>, Const::<8>));
-    // let (value_logits, policy_logits) = model.forward(tensor);
-    // let policy = (policy_logits
-    //     * dev.tensor_from_vec(
-    //         data::legal_move_masks(&pos).into_raw_vec(),
-    //         (Const::<4608>,),
-    //     ))
-    // .softmax();
-    // println!(
-    //     "Q value: {:.2}%",
-    //     (value_logits.array()[0] / 2.0 + 0.5) * 100.0
-    // );
-    // let mut move_probabilities = Vec::new();
-    // let movegen = pos.legal_moves();
-    // for mov in movegen {
-    //     if let Some(p) = mov.promotion() {
-    //         if p != Role::Queen {
-    //             continue;
-    //         }
-    //     }
-    //     let flip = pos.turn() == Color::Black;
+    let pos: Chess = shakmaty::fen::Fen::from_ascii(args[1].as_bytes())
+        .expect("bad fen")
+        .into_position(CastlingMode::Standard)
+        .expect("bad fen");
+    dbg!(&args[1]);
+    let data = data::encode_positions(&pos);
+    let tensor = dev.tensor_from_vec(data.into_raw_vec(), (Const::<16>, Const::<8>, Const::<8>));
+    let (value_logits, policy_logits) = model.forward(tensor);
+    let policy = (policy_logits
+        * dev.tensor_from_vec(
+            data::legal_move_masks(&pos).into_raw_vec(),
+            (Const::<4608>,),
+        ))
+    .softmax();
+    println!(
+        "Q value: {:.2}%",
+        (value_logits.array()[0] / 2.0 + 0.5) * 100.0
+    );
+    let mut move_probabilities = Vec::new();
+    let movegen = pos.legal_moves();
+    for mov in movegen {
+        if let Some(p) = mov.promotion() {
+            if p != Role::Queen {
+                continue;
+            }
+        }
+        let flip = pos.turn() == Color::Black;
 
-    //     let (plane_idx, rank_idx, file_idx) = data::move_to_idx(&mov, flip);
-    //     let mov_idx = plane_idx * 64 + rank_idx * 8 + file_idx;
-    //     move_probabilities.push((mov, policy[[mov_idx as usize]]));
-    // }
+        let (plane_idx, rank_idx, file_idx) = data::move_to_idx(&mov, flip);
+        let mov_idx = plane_idx * 64 + rank_idx * 8 + file_idx;
+        move_probabilities.push((mov, policy[[mov_idx as usize]]));
+    }
 
-    // for (mov, prob) in move_probabilities {
-    //     println!(
-    //         "Move {}: {:.2}%",
-    //         San::from_move(&pos, &mov).to_string(),
-    //         prob * 100.0
-    //     );
-    // }
+    for (mov, prob) in move_probabilities {
+        println!(
+            "Move {}: {:.2}%",
+            San::from_move(&pos, &mov).to_string(),
+            prob * 100.0
+        );
+    }
 
-    // return;
+    return;
 
     let mut grads = model.alloc_grads();
-    let mut opt = Adam::new(
+    let mut opt = Sgd::new(
         &model,
-        AdamConfig {
-            // lr: 0.1,
-            // momentum: Some(Momentum::Nesterov(0.9)),
-            // weight_decay: Some(WeightDecay::L2(1e-4)),
+        SgdConfig {
+            lr: 0.01,
+            momentum: Some(Momentum::Nesterov(0.9)),
+            weight_decay: Some(WeightDecay::L2(1e-4)),
             ..Default::default()
         },
     );
@@ -115,9 +115,6 @@ fn main() {
                 if let Some(Some(result)) =
                     reader.read_game(&mut visitor).expect("failed to read game")
                 {
-                    if result.0 < 2200 {
-                        continue;
-                    }
                     games.push(result)
                 } else {
                     should_stop = true;
@@ -136,7 +133,7 @@ fn main() {
                 .progress()
             {
                 total_training_steps += 1;
-                if total_training_steps % 80000 == 0 {
+                if total_training_steps % 20000 == 0 {
                     opt.cfg.lr /= 10.0;
                 }
 
