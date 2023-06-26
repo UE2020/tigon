@@ -113,12 +113,12 @@ impl<S: Shape, D: DeviceStorage, T> Inspect for Tensor<S, f32, D, T> {
                 }
             }
         }
-        // let img = image::imageops::resize(
-        //     &img,
-        //     (8 * 8 + (8 - 1)) * 20,
-        //     (8 * 8 + (8 - 1)) * 20,
-        //     image::imageops::FilterType::Nearest,
-        // );
+        let img = image::imageops::resize(
+            &img,
+            8*8 * 5,
+            8*8 * 5,
+            image::imageops::FilterType::Triangle,
+        );
         img.save("planes.png").unwrap();
     }
 }
