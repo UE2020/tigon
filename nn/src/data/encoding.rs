@@ -190,39 +190,39 @@ pub fn encode_positions<B: Position>(pos: &B) -> EncodedPositions {
         }
     }
 
-	let pawn_difference = (pawns & white).count() - (pawns & black).count();
-	let knight_difference = (knights & white).count() - (knights & black).count();
-	let bishop_difference = (bishops & white).count() - (bishops & black).count();
-	let rook_difference = (rooks & white).count() - (rooks & black).count();
-	let queen_difference = (queens & white).count() - (queens & black).count();
+	let pawn_difference = (pawns & white).count() - (pawns & black).count() + 8;
+	let knight_difference = (knights & white).count() - (knights & black).count() + 10;
+	let bishop_difference = (bishops & white).count() - (bishops & black).count() + 10;
+	let rook_difference = (rooks & white).count() - (rooks & black).count() + 10;
+	let queen_difference = (queens & white).count() - (queens & black).count() + 9;
 
 	for x in 0..8 {
 		for y in 0..8 {
-			planes[[16, x, y]] = (pawn_difference as f32) / 8.0;
+			planes[[16, x, y]] = (pawn_difference as f32) / 16.0;
 		}
 	}
 
 	for x in 0..8 {
 		for y in 0..8 {
-			planes[[17, x, y]] = (knight_difference as f32) / 10.0;
+			planes[[17, x, y]] = (knight_difference as f32) / 20.0;
 		}
 	}
 
 	for x in 0..8 {
 		for y in 0..8 {
-			planes[[18, x, y]] = (bishop_difference as f32) / 10.0;
+			planes[[18, x, y]] = (bishop_difference as f32) / 20.0;
 		}
 	}
 
 	for x in 0..8 {
 		for y in 0..8 {
-			planes[[19, x, y]] = (rook_difference as f32) / 10.0;
+			planes[[19, x, y]] = (rook_difference as f32) / 20.0;
 		}
 	}
 
 	for x in 0..8 {
 		for y in 0..8 {
-			planes[[20, x, y]] = (queen_difference as f32) / 9.0;
+			planes[[20, x, y]] = (queen_difference as f32) / 18.0;
 		}
 	}
 
