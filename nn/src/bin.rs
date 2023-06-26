@@ -133,7 +133,10 @@ fn main() {
                 .progress()
             {
                 total_training_steps += 1;
-                opt.cfg.lr = (-0.0000035 * (total_training_steps as f32) + 1e-3).max(0.00001);
+				if total_training_steps % 40000 == 0 {
+					opt.cfg.lr /= 10.0;
+				}
+                //opt.cfg.lr = (-0.0000035 * (total_training_steps as f32) + 1e-3).max(0.00001);
 
                 if total_training_steps % 100 == 0 {
                     model.save("testbed.npz").expect("failed to save model");
