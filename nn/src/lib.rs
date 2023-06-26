@@ -13,7 +13,7 @@ pub type BasicBlock<const C: usize> = Residual<(
 )>;
 
 pub type NetworkStructure<const FILTERS: usize, const BLOCKS: usize> = (
-    ((Conv2D<22, FILTERS, 3, 1, 1>, BatchNorm2D<FILTERS>), ReLU),
+    ((Conv2D<16, FILTERS, 3, 1, 1>, BatchNorm2D<FILTERS>), ReLU),
     Repeated<(BasicBlock<FILTERS>, ReLU), BLOCKS>,
     SplitInto<(ValueHead<FILTERS>, PolicyHead<FILTERS>)>,
 );

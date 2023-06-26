@@ -84,7 +84,7 @@ fn main() {
     let preprocess =
         |(img, eval, policy, mask): <data::ChessPositionSet as ExactSizeDataset>::Item<'_>| {
             (
-                dev.tensor_from_vec(img, (Const::<22>, Const::<8>, Const::<8>)),
+                dev.tensor_from_vec(img, (Const::<16>, Const::<8>, Const::<8>)),
                 (
                     dev.tensor([eval]),
                     (
