@@ -74,7 +74,7 @@ fn main() {
     let mut opt = Sgd::new(
         &model,
         SgdConfig {
-            lr: 0.01,
+            lr: 0.07,
             momentum: Some(Momentum::Nesterov(0.9)),
             // weight_decay: Some(WeightDecay::L2(1e-4)),
             ..Default::default()
@@ -133,9 +133,7 @@ fn main() {
                 .progress()
             {
                 total_training_steps += 1;
-                if total_training_steps % 80000 == 0 {
-                    opt.cfg.lr /= 10.0;
-                }
+                opt.cfg.lr = (-0.0000035 * (total_training_steps as f32) + 0.7).max(0.00001);
 
                 if total_training_steps % 20 == 0 {
                     model.save("testbed.npz").expect("failed to save model");
