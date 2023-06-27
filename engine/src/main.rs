@@ -33,7 +33,7 @@ fn main() -> Result<(), PlayError<Chess>> {
     dfdx::flush_denormals_to_zero();
 
     let dev = AutoDevice::default();
-    let mut model = dev.build_module::<nn::NetworkStructure<64, 5>, f32>();
+    let mut model = dev.build_module::<nn::DenseNetworkStructure<64, 256, 5>, f32>();
     dbg!(model.num_trainable_params());
     model
         .load("/home/tt/Documents/tigon/testbed.npz")
@@ -60,13 +60,14 @@ fn main() -> Result<(), PlayError<Chess>> {
         Arc::new(move |pos: &Chess| {
             let data = encoding::encode_positions(pos);
             let tensor =
-                dev.tensor_from_vec(data.into_raw_vec(), (Const::<16>, Const::<8>, Const::<8>));
-            let (value_logits, policy_logits) = model.forward(tensor);
+                dev.tensor_from_vec(data.into_raw_vec(), (Const::<22>, Const::<8>, Const::<8>));
+            let (value_logits, policy_logits) = model.forward([tensor].stack());
+            let policy_logits = policy_logits.reshape::<(Const<4608>,)>();
             let policy = (policy_logits
                 * dev.tensor_from_vec(
                     encoding::legal_move_masks(pos).into_raw_vec(),
                     (Const::<4608>,),
-                ))
+                ) / 1.7)
             .softmax()
             .array();
             let value = value_logits.array()[0];
@@ -85,7 +86,7 @@ fn main() -> Result<(), PlayError<Chess>> {
                 move_probabilities.push((mov, policy[mov_idx as usize]));
             }
             (
-                value,
+                value[0],
                 move_probabilities
                     .into_iter()
                     .map(|(mov, prior)| {

@@ -18,6 +18,32 @@ pub type NetworkStructure<const FILTERS: usize, const BLOCKS: usize> = (
     SplitInto<(ValueHead<FILTERS>, PolicyHead<FILTERS>)>,
 );
 
+pub type DenseNetworkStructure<const FILTERS: usize, const SIZE: usize, const BLOCKS: usize> = (
+    ((Conv2D<22, FILTERS, 3, 1, 1>, BatchNorm2D<FILTERS>), ReLU),
+    (Flatten2D, Linear<4096, SIZE>, BatchNorm1D<SIZE>),
+    Repeated<DenseBlock<SIZE>, BLOCKS>,
+    (BatchNorm1D<SIZE>, ReLU),
+    SplitInto<(
+        (
+            Linear<SIZE, 64>,
+            Linear<64, 256>,
+            ReLU,
+            Linear<256, 1>,
+            Tanh,
+        ),
+        (Linear<SIZE, 4608>,),
+    )>,
+);
+
+pub type DenseBlock<const SIZE: usize> = Residual<(
+    BatchNorm1D<SIZE>,
+    ReLU,
+    Linear<SIZE, SIZE>,
+    BatchNorm1D<SIZE>,
+    ReLU,
+    Linear<SIZE, SIZE>,
+)>;
+
 pub type ValueHead<const FILTERS: usize> = (
     ((Conv2D<FILTERS, 1, 1>, BatchNorm2D<1>), ReLU),
     (Flatten2D, Linear<64, 256>, ReLU, Linear<256, 1>, Tanh),

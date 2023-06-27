@@ -76,15 +76,15 @@ impl<S: Shape, D: DeviceStorage, T> Inspect for Tensor<S, f32, D, T> {
         let data = self.as_vec();
         let planes = ndarray::Array3::from_shape_vec((64, 8, 8), data).unwrap();
         let mut img = RgbImage::new(8 * 8, 8 * 8);
-		// for x in 0..(8 * 8 + (8 - 1)) {
-		// 	for y in 0..(8 * 8 + (8 - 1)) {
-		// 		img.put_pixel(
-		// 			x,
-		// 			y,
-		// 			Rgb([100, 0, 0]),
-		// 		);
-		// 	}
-		// }
+        // for x in 0..(8 * 8 + (8 - 1)) {
+        // 	for y in 0..(8 * 8 + (8 - 1)) {
+        // 		img.put_pixel(
+        // 			x,
+        // 			y,
+        // 			Rgb([100, 0, 0]),
+        // 		);
+        // 	}
+        // }
         for (i, plane) in planes.axis_iter(ndarray::Axis(0)).enumerate() {
             let mut max = 0.0;
             for x in 0..8 {
@@ -98,25 +98,21 @@ impl<S: Shape, D: DeviceStorage, T> Inspect for Tensor<S, f32, D, T> {
             for x in 0..8 {
                 for y in 0..8 {
                     let activation = plane[[y, x]] / max;
-					let byte = (activation * 255.0) as u8;
-					let mut color = [0, 0, 0];
-					color[i % 3] = byte;
+                    let byte = (activation * 255.0) as u8;
+                    let mut color = [0, 0, 0];
+                    color[i % 3] = byte;
                     // let hue = (1.0 - activation) * 240.0;
-					// let (r, g, b) = to_rgb(hue, 1.0, 0.5);
+                    // let (r, g, b) = to_rgb(hue, 1.0, 0.5);
                     let x_index = i as u32 % 8;
                     let y_index = i as u32 / 8;
-                    img.put_pixel(
-                        x as u32 + x_index * 8,
-                        y as u32 + y_index * 8,
-                        Rgb(color),
-                    );
+                    img.put_pixel(x as u32 + x_index * 8, y as u32 + y_index * 8, Rgb(color));
                 }
             }
         }
         let img = image::imageops::resize(
             &img,
-            8*8 * 5,
-            8*8 * 5,
+            8 * 8 * 5,
+            8 * 8 * 5,
             image::imageops::FilterType::Triangle,
         );
         img.save("planes.png").unwrap();

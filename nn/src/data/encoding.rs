@@ -4,14 +4,10 @@ type EncodedPositions = ndarray::ArrayBase<ndarray::OwnedRepr<f32>, ndarray::Dim
 
 fn coords(mut sq: Square, flip: bool) -> (usize, usize) {
     if flip {
-        sq = Square::new((sq as u8 ^ 0x38) as u32);
+        sq = sq.flip_vertical();
     }
 
     (sq.rank() as usize, sq.file() as usize)
-}
-
-fn icoords(sq: Square) -> (isize, isize) {
-    (sq.rank() as isize, sq.file() as isize)
 }
 
 pub fn encode_positions<B: Position>(pos: &B) -> EncodedPositions {
@@ -190,44 +186,44 @@ pub fn encode_positions<B: Position>(pos: &B) -> EncodedPositions {
         }
     }
 
-	let pawn_difference = (pawns & white).count() - (pawns & black).count() + 8;
-	let knight_difference = (knights & white).count() - (knights & black).count() + 10;
-	let bishop_difference = (bishops & white).count() - (bishops & black).count() + 10;
-	let rook_difference = (rooks & white).count() - (rooks & black).count() + 10;
-	let queen_difference = (queens & white).count() - (queens & black).count() + 9;
+    let pawn_difference = (pawns & white).count() - (pawns & black).count() + 8;
+    let knight_difference = (knights & white).count() - (knights & black).count() + 10;
+    let bishop_difference = (bishops & white).count() - (bishops & black).count() + 10;
+    let rook_difference = (rooks & white).count() - (rooks & black).count() + 10;
+    let queen_difference = (queens & white).count() - (queens & black).count() + 9;
 
-	for x in 0..8 {
-		for y in 0..8 {
-			planes[[16, x, y]] = (pawn_difference as f32) / 16.0;
-		}
-	}
+    for x in 0..8 {
+        for y in 0..8 {
+            planes[[16, x, y]] = (pawn_difference as f32) / 16.0;
+        }
+    }
 
-	for x in 0..8 {
-		for y in 0..8 {
-			planes[[17, x, y]] = (knight_difference as f32) / 20.0;
-		}
-	}
+    for x in 0..8 {
+        for y in 0..8 {
+            planes[[17, x, y]] = (knight_difference as f32) / 20.0;
+        }
+    }
 
-	for x in 0..8 {
-		for y in 0..8 {
-			planes[[18, x, y]] = (bishop_difference as f32) / 20.0;
-		}
-	}
+    for x in 0..8 {
+        for y in 0..8 {
+            planes[[18, x, y]] = (bishop_difference as f32) / 20.0;
+        }
+    }
 
-	for x in 0..8 {
-		for y in 0..8 {
-			planes[[19, x, y]] = (rook_difference as f32) / 20.0;
-		}
-	}
+    for x in 0..8 {
+        for y in 0..8 {
+            planes[[19, x, y]] = (rook_difference as f32) / 20.0;
+        }
+    }
 
-	for x in 0..8 {
-		for y in 0..8 {
-			planes[[20, x, y]] = (queen_difference as f32) / 18.0;
-		}
-	}
+    for x in 0..8 {
+        for y in 0..8 {
+            planes[[20, x, y]] = (queen_difference as f32) / 18.0;
+        }
+    }
 
-	let king_sq = Square::new((white | kings).0.trailing_zeros());
-	let mut checkers = pos.king_attackers(king_sq, black_color, black | white);
+    let king_sq = Square::new((white | kings).0.trailing_zeros());
+    let mut checkers = pos.king_attackers(king_sq, black_color, black | white);
     while checkers != Bitboard(0) {
         let sq = Square::new(checkers.0.trailing_zeros());
         let (r, f) = coords(sq, flip);
@@ -252,17 +248,11 @@ pub fn move_to_idx(mov: &Move, flip: bool) -> (isize, isize, isize) {
         m => (m.from().unwrap(), m.to()),
     };
 
-    let (from_rank, from_file) = icoords(if flip {
-        Square::new((from as u8 ^ 0x38) as u32)
-    } else {
-        from
-    });
+    let (from_rank, from_file) = coords(from, flip);
+	let (from_rank, from_file) = (from_rank as isize, from_file as isize);
 
-    let (to_rank, to_file) = icoords(if flip {
-        Square::new((to as u8 ^ 0x38) as u32)
-    } else {
-        to
-    });
+    let (to_rank, to_file) = coords(to, flip);
+	let (to_rank, to_file) = (to_rank as isize, to_file as isize);
 
     let mut direction_plane = 0;
     let mut distance = 0;

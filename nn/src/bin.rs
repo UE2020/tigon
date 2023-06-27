@@ -100,8 +100,8 @@ fn main() {
     let mut total_training_steps = 0;
 
     for i_epoch in 0..7 {
-        let file = File::open("nn/data/lichess_elite_2021-10.pgn")
-            .expect("training data not found");
+        let file =
+            File::open("nn/data/lichess_elite_2021-10.pgn").expect("training data not found");
         let mut reader = BufferedReader::new(file);
         let mut visitor = data::PgnVisitor::new();
 
@@ -133,10 +133,9 @@ fn main() {
                 .progress()
             {
                 total_training_steps += 1;
-				if total_training_steps % 40000 == 0 {
-					opt.cfg.lr /= 10.0;
-				}
-                //opt.cfg.lr = (-0.0000035 * (total_training_steps as f32) + 1e-3).max(0.00001);
+                if total_training_steps % 35000 == 0 {
+                    opt.cfg.lr /= 10.0;
+                }
 
                 if total_training_steps % 100 == 0 {
                     model.save("testbed.npz").expect("failed to save model");
