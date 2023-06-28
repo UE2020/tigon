@@ -33,7 +33,7 @@ fn main() -> Result<(), PlayError<Chess>> {
     dfdx::flush_denormals_to_zero();
 
     let dev = AutoDevice::default();
-    let mut model = dev.build_module::<nn::DenseNetworkStructure<64, 256, 5>, f32>();
+    let mut model = dev.build_module::<nn::NetworkStructure<64, 5>, f32>();
     dbg!(model.num_trainable_params());
     model
         .load("/home/tt/Documents/tigon/testbed.npz")
@@ -67,7 +67,7 @@ fn main() -> Result<(), PlayError<Chess>> {
                 * dev.tensor_from_vec(
                     encoding::legal_move_masks(pos).into_raw_vec(),
                     (Const::<4608>,),
-                ) / 1.7)
+                ))
             .softmax()
             .array();
             let value = value_logits.array()[0];
@@ -157,7 +157,7 @@ fn main() -> Result<(), PlayError<Chess>> {
                         if pos.fullmoves().get() > 40 {
                             time_left / 20 + (increment / 2)
                         } else {
-                            time_left / (40 - pos.fullmoves().get()) + (increment / 2)
+                            time_left / 40 + (increment / 2)
                         }
                     }
                     _ => Duration::from_millis(3.6e+6 as u64),

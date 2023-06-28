@@ -133,7 +133,7 @@ fn main() {
                 .progress()
             {
                 total_training_steps += 1;
-                if total_training_steps % 35000 == 0 {
+                if total_training_steps % 20000 == 0 {
                     opt.cfg.lr /= 10.0;
                 }
 

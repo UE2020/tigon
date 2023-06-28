@@ -113,7 +113,7 @@ impl<S: Shape, D: DeviceStorage, T> Inspect for Tensor<S, f32, D, T> {
             &img,
             8 * 8 * 5,
             8 * 8 * 5,
-            image::imageops::FilterType::Triangle,
+            image::imageops::FilterType::Gaussian,
         );
         img.save("planes.png").unwrap();
     }

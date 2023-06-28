@@ -4,14 +4,10 @@ type EncodedPositions = ndarray::ArrayBase<ndarray::OwnedRepr<f32>, ndarray::Dim
 
 fn coords(mut sq: Square, flip: bool) -> (usize, usize) {
     if flip {
-        sq = Square::new((sq as u8 ^ 0x38) as u32);
+        sq = sq.flip_vertical();
     }
 
     (sq.rank() as usize, sq.file() as usize)
-}
-
-fn icoords(sq: Square) -> (isize, isize) {
-    (sq.rank() as isize, sq.file() as isize)
 }
 
 pub fn encode_positions<B: Position>(pos: &B) -> EncodedPositions {
@@ -252,17 +248,11 @@ pub fn move_to_idx(mov: &Move, flip: bool) -> (isize, isize, isize) {
         m => (m.from().unwrap(), m.to()),
     };
 
-    let (from_rank, from_file) = icoords(if flip {
-        Square::new((from as u8 ^ 0x38) as u32)
-    } else {
-        from
-    });
+    let (from_rank, from_file) = coords(from, flip);
+    let (from_rank, from_file) = (from_rank as isize, from_file as isize);
 
-    let (to_rank, to_file) = icoords(if flip {
-        Square::new((to as u8 ^ 0x38) as u32)
-    } else {
-        to
-    });
+    let (to_rank, to_file) = coords(to, flip);
+    let (to_rank, to_file) = (to_rank as isize, to_file as isize);
 
     let mut direction_plane = 0;
     let mut distance = 0;
@@ -336,116 +326,3 @@ pub fn legal_move_masks<B: Position>(pos: &B) -> MoveMasks {
 
     mask
 }
-
-// /// Get the policy head probabilities and the value head prediction for a given position.
-// pub fn get_neural_output<B: Position + Clone>(
-//     board: &B,
-//     network: &tch::CModule,
-// ) -> (Vec<(Move, f32)>, f32) {
-//     let position = encode_positions(board);
-//     let mask = legal_move_masks(board);
-
-//     let position: tch::Tensor = tch::Tensor::try_from(position).unwrap();
-//     let mask: tch::Tensor = tch::Tensor::try_from(mask).unwrap();
-
-//     let output = network
-//         .forward_is(&[
-//             tch::jit::IValue::Tensor(position),
-//             tch::jit::IValue::Tensor(mask),
-//         ])
-//         .unwrap();
-
-//     match output {
-//         tch::jit::IValue::Tuple(tensors) => {
-//             let value = match &tensors[0] {
-//                 tch::jit::IValue::Tensor(tensor) => tensor,
-//                 _ => unreachable!(),
-//             };
-
-//             let policy = match &tensors[1] {
-//                 tch::jit::IValue::Tensor(tensor) => tensor,
-//                 _ => unreachable!(),
-//             };
-
-//             let policy = &policy.nan_to_num(0.0, 0.0, 0.0);
-
-//             let value: ndarray::ArrayBase<ndarray::OwnedRepr<f32>, _> = value.try_into().unwrap();
-//             let value = value[[0, 0]];
-
-//             let policy: ndarray::ArrayBase<ndarray::OwnedRepr<f32>, _> = policy.try_into().unwrap();
-//             let flat_policy: Vec<f32> = policy.into_iter().collect::<Vec<_>>();
-
-//             let mut move_probabilities = Vec::new();
-//             let movegen = board.legal_moves();
-//             for mov in movegen {
-//                 if let Some(p) = mov.promotion() {
-//                     if p != Role::Queen {
-//                         continue;
-//                     }
-//                 }
-//                 let flip = board.turn() == Color::Black;
-
-//                 let (plane_idx, rank_idx, file_idx) = move_to_idx(&mov, flip);
-//                 let mov_idx = plane_idx * 64 + rank_idx * 8 + file_idx;
-//                 move_probabilities.push((mov, flat_policy[mov_idx as usize]));
-//             }
-
-//             (move_probabilities, value)
-//         }
-//         _ => unreachable!(),
-//     }
-// }
-
-// Get the policy head probabilities and the value head prediction for a batch of positions.
-// pub fn get_neural_output_batched<B: Position>(
-//     boards: &[B],
-//     network: &tch::CModule,
-// ) -> Vec<(Vec<(Move, f32)>, f32)> {
-//     let positions = encode_positions(boards);
-//     let masks = legal_move_masks(boards);
-
-//     let positions: tch::Tensor = tch::Tensor::try_from(positions).unwrap();
-//     let masks: tch::Tensor = tch::Tensor::try_from(masks).unwrap();
-
-//     let output = network
-//         .forward_is(&[
-//             tch::jit::IValue::Tensor(positions),
-//             tch::jit::IValue::Tensor(masks),
-//         ])
-//         .unwrap();
-
-//     match output {
-//         tch::jit::IValue::Tuple(tensors) => {
-//             let value = match &tensors[0] {
-//                 tch::jit::IValue::Tensor(tensor) => tensor,
-//                 _ => unreachable!(),
-//             };
-
-//             let policy = match &tensors[1] {
-//                 tch::jit::IValue::Tensor(tensor) => tensor,
-//                 _ => unreachable!(),
-//             };
-
-//             let policy = &policy.nan_to_num(0.0, 0.0, 0.0);
-//             let value: ndarray::ArrayBase<ndarray::OwnedRepr<f32>, _> = value.try_into().unwrap();
-//             let policy: ndarray::ArrayBase<ndarray::OwnedRepr<f32>, _> = policy.try_into().unwrap();
-//             let mut outputs = vec![];
-
-//             for (i, board) in boards.iter().enumerate() {
-//                 let flip = board.turn() == Color::Black;
-//                 let mut move_probabilities = Vec::new();
-//                 let movegen = board.legal_moves();
-//                 for mov in movegen {
-//                     let (plane_idx, rank_idx, file_idx) = move_to_idx(&mov, flip);
-//                     let mov_idx = plane_idx * 64 + rank_idx * 8 + file_idx;
-//                     move_probabilities.push((mov, policy[[i, mov_idx as usize]]));
-//                 }
-
-//                 outputs.push((move_probabilities, value[[i, 0]]));
-//             }
-
-//             outputs
-//         }
-//         _ => unreachable!(),
-//     }
-// }

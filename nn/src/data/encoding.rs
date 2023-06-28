@@ -237,22 +237,13 @@ pub fn encode_positions<B: Position>(pos: &B) -> EncodedPositions {
 
 #[allow(unused_assignments)]
 pub fn move_to_idx(mov: &Move, flip: bool) -> (isize, isize, isize) {
-    let (from, to) = match mov {
-        Move::Castle { king, rook } => (
-            *king,
-            match mov.castling_side().unwrap() {
-                CastlingSide::KingSide => rook.offset(-1).unwrap(),
-                CastlingSide::QueenSide => rook.offset(1).unwrap(),
-            },
-        ),
-        m => (m.from().unwrap(), m.to()),
-    };
+    let (from, to) = (mov.from().unwrap(), mov.to());
 
     let (from_rank, from_file) = coords(from, flip);
-	let (from_rank, from_file) = (from_rank as isize, from_file as isize);
+    let (from_rank, from_file) = (from_rank as isize, from_file as isize);
 
     let (to_rank, to_file) = coords(to, flip);
-	let (to_rank, to_file) = (to_rank as isize, to_file as isize);
+    let (to_rank, to_file) = (to_rank as isize, to_file as isize);
 
     let mut direction_plane = 0;
     let mut distance = 0;

@@ -1,3 +1,4 @@
+#![feature(generic_const_exprs)]
 pub use dfdx;
 use dfdx::prelude::*;
 
@@ -18,9 +19,8 @@ pub type NetworkStructure<const FILTERS: usize, const BLOCKS: usize> = (
     SplitInto<(ValueHead<FILTERS>, PolicyHead<FILTERS>)>,
 );
 
-pub type DenseNetworkStructure<const FILTERS: usize, const SIZE: usize, const BLOCKS: usize> = (
-    ((Conv2D<22, FILTERS, 3, 1, 1>, BatchNorm2D<FILTERS>), ReLU),
-    (Flatten2D, Linear<4096, SIZE>, BatchNorm1D<SIZE>),
+pub type DenseNetworkStructure<const SIZE: usize, const BLOCKS: usize> = (
+    (Flatten2D, Linear<{ 16 * 8 * 8 }, SIZE>, BatchNorm1D<SIZE>),
     Repeated<DenseBlock<SIZE>, BLOCKS>,
     (BatchNorm1D<SIZE>, ReLU),
     SplitInto<(
