@@ -111,7 +111,7 @@ fn main() {
             let mut num_batches = 0;
             let start = Instant::now();
             let mut games = vec![];
-            for _ in 0..250000 {
+            for _ in 0..100000 {
                 if let Some(Some(result)) =
                     reader.read_game(&mut visitor).expect("failed to read game")
                 {
