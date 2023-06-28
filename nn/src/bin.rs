@@ -101,7 +101,7 @@ fn main() {
 
     for i_epoch in 0..7 {
         let file =
-            File::open("nn/data/lichess_elite_2021-10.pgn").expect("training data not found");
+            File::open("nn/data/lichess_elite_2021-11.pgn").expect("training data not found");
         let mut reader = BufferedReader::new(file);
         let mut visitor = data::PgnVisitor::new();
 
@@ -133,7 +133,7 @@ fn main() {
                 .progress()
             {
                 total_training_steps += 1;
-                if total_training_steps % 20000 == 0 {
+                if total_training_steps % 30000 == 0 {
                     opt.cfg.lr /= 10.0;
                 }
 
