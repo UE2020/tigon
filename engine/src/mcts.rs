@@ -10,7 +10,7 @@ use std::sync::Arc;
 pub mod hasher;
 pub use hasher::*;
 
-pub const C_PUCT: f32 = 3.1;
+pub const C_PUCT: f32 = 1.5;
 
 pub type PositionHash = u64;
 

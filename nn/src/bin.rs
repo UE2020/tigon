@@ -24,7 +24,7 @@ fn main() {
 
     let args: Vec<String> = std::env::args().collect();
 
-    let mut model = dev.build_module::<NetworkStructure<64, 5>, f32>();
+    let mut model = dev.build_module::<DenseNetworkStructure<256, 5>, f32>();
     // model.load("testbed.npz").expect("failed to load model");
 
     // let pos: Chess = shakmaty::fen::Fen::from_ascii(args[1].as_bytes())
@@ -84,7 +84,7 @@ fn main() {
     let preprocess =
         |(img, eval, policy, mask): <data::ChessPositionSet as ExactSizeDataset>::Item<'_>| {
             (
-                dev.tensor_from_vec(img, (Const::<22>, Const::<8>, Const::<8>)),
+                dev.tensor_from_vec(img, (Const::<16>, Const::<8>, Const::<8>)),
                 (
                     dev.tensor([eval]),
                     (
@@ -101,7 +101,7 @@ fn main() {
 
     for i_epoch in 0..7 {
         let file =
-            File::open("nn/data/lichess_elite_2021-10.pgn").expect("training data not found");
+            File::open("nn/data/lichess_elite_2021-11.pgn").expect("training data not found");
         let mut reader = BufferedReader::new(file);
         let mut visitor = data::PgnVisitor::new();
 

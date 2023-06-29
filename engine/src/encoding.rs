@@ -11,7 +11,7 @@ fn coords(mut sq: Square, flip: bool) -> (usize, usize) {
 }
 
 pub fn encode_positions<B: Position>(pos: &B) -> EncodedPositions {
-    let mut planes = ndarray::Array::<f32, _>::zeros((22, 8, 8));
+    let mut planes = ndarray::Array::<f32, _>::zeros((16, 8, 8));
     let flip = pos.turn() == Color::Black;
     let pawns = pos.board().pawns();
     let knights = pos.board().knights();
@@ -186,67 +186,58 @@ pub fn encode_positions<B: Position>(pos: &B) -> EncodedPositions {
         }
     }
 
-    let pawn_difference = (pawns & white).count() - (pawns & black).count() + 8;
-    let knight_difference = (knights & white).count() - (knights & black).count() + 10;
-    let bishop_difference = (bishops & white).count() - (bishops & black).count() + 10;
-    let rook_difference = (rooks & white).count() - (rooks & black).count() + 10;
-    let queen_difference = (queens & white).count() - (queens & black).count() + 9;
+    // let pawn_difference = (pawns & white).count() - (pawns & black).count() + 8;
+    // let knight_difference = (knights & white).count() - (knights & black).count() + 10;
+    // let bishop_difference = (bishops & white).count() - (bishops & black).count() + 10;
+    // let rook_difference = (rooks & white).count() - (rooks & black).count() + 10;
+    // let queen_difference = (queens & white).count() - (queens & black).count() + 9;
 
-    for x in 0..8 {
-        for y in 0..8 {
-            planes[[16, x, y]] = (pawn_difference as f32) / 16.0;
-        }
-    }
+    // for x in 0..8 {
+    //     for y in 0..8 {
+    //         planes[[16, x, y]] = (pawn_difference as f32) / 16.0;
+    //     }
+    // }
 
-    for x in 0..8 {
-        for y in 0..8 {
-            planes[[17, x, y]] = (knight_difference as f32) / 20.0;
-        }
-    }
+    // for x in 0..8 {
+    //     for y in 0..8 {
+    //         planes[[17, x, y]] = (knight_difference as f32) / 20.0;
+    //     }
+    // }
 
-    for x in 0..8 {
-        for y in 0..8 {
-            planes[[18, x, y]] = (bishop_difference as f32) / 20.0;
-        }
-    }
+    // for x in 0..8 {
+    //     for y in 0..8 {
+    //         planes[[18, x, y]] = (bishop_difference as f32) / 20.0;
+    //     }
+    // }
 
-    for x in 0..8 {
-        for y in 0..8 {
-            planes[[19, x, y]] = (rook_difference as f32) / 20.0;
-        }
-    }
+    // for x in 0..8 {
+    //     for y in 0..8 {
+    //         planes[[19, x, y]] = (rook_difference as f32) / 20.0;
+    //     }
+    // }
 
-    for x in 0..8 {
-        for y in 0..8 {
-            planes[[20, x, y]] = (queen_difference as f32) / 18.0;
-        }
-    }
+    // for x in 0..8 {
+    //     for y in 0..8 {
+    //         planes[[20, x, y]] = (queen_difference as f32) / 18.0;
+    //     }
+    // }
 
-    let king_sq = Square::new((white | kings).0.trailing_zeros());
-    let mut checkers = pos.king_attackers(king_sq, black_color, black | white);
-    while checkers != Bitboard(0) {
-        let sq = Square::new(checkers.0.trailing_zeros());
-        let (r, f) = coords(sq, flip);
-        planes[[21, r, f]] = 1.0;
+    // let king_sq = Square::new((white | kings).0.trailing_zeros());
+    // let mut checkers = pos.king_attackers(king_sq, black_color, black | white);
+    // while checkers != Bitboard(0) {
+    //     let sq = Square::new(checkers.0.trailing_zeros());
+    //     let (r, f) = coords(sq, flip);
+    //     planes[[21, r, f]] = 1.0;
 
-        checkers ^= Bitboard::from_square(sq);
-    }
+    //     checkers ^= Bitboard::from_square(sq);
+    // }
 
     planes
 }
 
 #[allow(unused_assignments)]
 pub fn move_to_idx(mov: &Move, flip: bool) -> (isize, isize, isize) {
-    let (from, to) = match mov {
-        Move::Castle { king, rook } => (
-            *king,
-            match mov.castling_side().unwrap() {
-                CastlingSide::KingSide => rook.offset(-1).unwrap(),
-                CastlingSide::QueenSide => rook.offset(1).unwrap(),
-            },
-        ),
-        m => (m.from().unwrap(), m.to()),
-    };
+    let (from, to) = (mov.from().unwrap(), mov.to());
 
     let (from_rank, from_file) = coords(from, flip);
     let (from_rank, from_file) = (from_rank as isize, from_file as isize);

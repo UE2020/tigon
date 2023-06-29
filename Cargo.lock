@@ -263,9 +263,9 @@ dependencies = [
 
 [[package]]
 name = "cudarc"
-version = "0.9.9"
+version = "0.9.10"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5ed31a3c990879a0e35a4811197c3d4f65f23700c47fa8b48577442ec16fada8"
+checksum = "d0d3c4ff8d49f12f66060c5b9a8b9984bd4e6dee3972fe94e0722ee9574cd53b"
 
 [[package]]
 name = "deflate"
@@ -284,7 +284,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "17330e12d809761fd04c750db4fd0783b0d3d25064ac3d83e818a93d0c2ef395"
 dependencies = [
  "cudarc",
- "glob",
  "matrixmultiply",
  "num-traits",
  "rand",
@@ -426,12 +425,6 @@ dependencies = [
  "color_quant",
  "weezl",
 ]
-
-[[package]]
-name = "glob"
-version = "0.3.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d2fabcfbdc87f4758337ca535fb41a6d701b65693ce38287d856d1674551ec9b"
 
 [[package]]
 name = "half"
