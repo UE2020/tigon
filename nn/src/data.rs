@@ -1,4 +1,4 @@
-use dfdx::data::*;
+//use dfdx::data::*;
 use pgn_reader::*;
 use shakmaty::*;
 
@@ -78,17 +78,15 @@ impl AverageOutcome {
 
     pub fn add_outcome(&mut self, outcome: Outcome) {
         self.sum += match outcome {
-            Outcome::Decisive { winner } => {
-                turn_to_side(winner) as f32
-            },
-			Outcome::Draw => 0.0
+            Outcome::Decisive { winner } => turn_to_side(winner) as f32,
+            Outcome::Draw => 0.0,
         };
-		self.total += 1;
+        self.total += 1;
     }
 
-	pub fn as_value(&self) -> f32 {
-		self.sum / self.total as f32
-	}
+    pub fn as_value(&self) -> f32 {
+        self.sum / self.total as f32
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -99,24 +97,30 @@ pub struct MoveDistribution {
 
 impl MoveDistribution {
     pub fn new() -> Self {
-        Self { moves: HashMap::new(), total: 0 }
+        Self {
+            moves: HashMap::new(),
+            total: 0,
+        }
     }
 
     pub fn add_move(&mut self, mov: &Move) {
-        self.moves.entry(mov.clone()).and_modify(|counter| *counter += 1).or_insert(1);
-		self.total += 1;
+        self.moves
+            .entry(mov.clone())
+            .and_modify(|counter| *counter += 1)
+            .or_insert(1);
+        self.total += 1;
     }
 
-	pub fn as_probability_vector(&self, pos: &Chess) -> Vec<f32> {
-		let mut output = vec![0.0; 4608];
-		for (mov, total) in self.moves.iter() {
-			let (plane_idx, rank_idx, file_idx) = move_to_idx(&mov, pos.turn() == Color::Black);
-			let mov_idx = plane_idx * 64 + rank_idx * 8 + file_idx;
-			output[mov_idx as usize] = *total as f32 / self.total as f32;
-		}
+    pub fn as_probability_vector(&self, pos: &Chess) -> Vec<f32> {
+        let mut output = vec![0.0; 4608];
+        for (mov, total) in self.moves.iter() {
+            let (plane_idx, rank_idx, file_idx) = move_to_idx(&mov, pos.turn() == Color::Black);
+            let mov_idx = plane_idx * 64 + rank_idx * 8 + file_idx;
+            output[mov_idx as usize] = *total as f32 / self.total as f32;
+        }
 
-		output
-	}
+        output
+    }
 }
 
 pub struct ChessPositionSet(Vec<(Chess, (AverageOutcome, MoveDistribution))>);
@@ -129,18 +133,18 @@ impl ChessPositionSet {
                 positions
                     .entry(pos.0)
                     .and_modify(|(avg_outcome, mov_distr)| {
-						avg_outcome.add_outcome(game.1);
-						mov_distr.add_move(&pos.1);
-					})
+                        avg_outcome.add_outcome(game.1);
+                        mov_distr.add_move(&pos.1);
+                    })
                     .or_insert({
-						let mut avg_outcome = AverageOutcome::new();
-						avg_outcome.add_outcome(game.1);
+                        let mut avg_outcome = AverageOutcome::new();
+                        avg_outcome.add_outcome(game.1);
 
-						let mut distr = MoveDistribution::new();
-						distr.add_move(&pos.1);
+                        let mut distr = MoveDistribution::new();
+                        distr.add_move(&pos.1);
 
-						(avg_outcome, distr)
-					});
+                        (avg_outcome, distr)
+                    });
             }
         }
 
@@ -148,28 +152,28 @@ impl ChessPositionSet {
     }
 }
 
-impl ExactSizeDataset for ChessPositionSet {
-    // board, value, policy, mask
-    type Item<'a> = (Vec<f32>, f32, Vec<f32>, Vec<f32>) where Self: 'a;
-    fn get(&self, index: usize) -> Self::Item<'_> {
-        let (pos, (outcome, distr)) = &self.0[index];
-        let data = encode_positions(pos);
+// impl ExactSizeDataset for ChessPositionSet {
+//     // board, value, policy, mask
+//     type Item<'a> = (Vec<f32>, f32, Vec<f32>, Vec<f32>) where Self: 'a;
+//     fn get(&self, index: usize) -> Self::Item<'_> {
+//         let (pos, (outcome, distr)) = &self.0[index];
+//         let data = encode_positions(pos);
 
-        // create policy output
-        let policy_vector = distr.as_probability_vector(&pos);
+//         // create policy output
+//         let policy_vector = distr.as_probability_vector(&pos);
 
-        (
-            data.into_raw_vec(),
-            outcome.as_value() * turn_to_side(pos.turn()) as f32,
-            policy_vector,
-            legal_move_masks(pos).into_raw_vec(),
-        )
-    }
+//         (
+//             data.into_raw_vec(),
+//             outcome.as_value() * turn_to_side(pos.turn()) as f32,
+//             policy_vector,
+//             legal_move_masks(pos).into_raw_vec(),
+//         )
+//     }
 
-    fn len(&self) -> usize {
-        self.0.len()
-    }
-}
+//     fn len(&self) -> usize {
+//         self.0.len()
+//     }
+// }
 
 pub fn turn_to_side(color: Color) -> i8 {
     match color {
