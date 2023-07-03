@@ -3,6 +3,7 @@ use burn::{
     nn::{self, conv::Conv2dPaddingConfig, loss::CrossEntropyLoss, BatchNorm},
     tensor::{
         backend::{ADBackend, Backend},
+        loss::cross_entropy_with_logits,
         Int, Tensor,
     },
     train::{
@@ -10,6 +11,8 @@ use burn::{
         ClassificationOutput, TrainOutput, TrainStep, ValidStep,
     },
 };
+
+use crate::batch::PositionBatch;
 
 #[derive(Module, Debug)]
 pub struct Model<B: Backend> {
@@ -43,18 +46,21 @@ impl<B: Backend> Model<B> {
         (value, policy)
     }
 
-    // pub fn forward_classification(&self, item: MNISTBatch<B>) -> ClassificationOutput<B> {
-    //     let targets = item.targets;
-    //     let output = self.forward(item.images);
-    //     let loss = CrossEntropyLoss::new(None);
-    //     let loss = loss.forward(output.clone(), targets.clone());
+    pub fn forward_output(&self, item: PositionBatch<B>) -> AlphaZeroOutput<B> {
+        let (policy_targets, value_targets) = (item.policy_targets, item.value_targets);
+        let (value_output, policy_output) = self.forward(item.positions);
+        let cross_entropy = CrossEntropyLoss::new(None);
+        let policy_loss = cross_entropy.forward(policy_output.clone(), policy_targets.clone());
+        let value_loss = (value_output.clone() - value_targets).mean().powf(2.0);
 
-    //     ClassificationOutput {
-    //         loss,
-    //         output,
-    //         targets,
-    //     }
-    // }
+        AlphaZeroOutput {
+            policy_loss,
+            value_loss,
+            policy: policy_output,
+            value: value_output,
+            policy_targets,
+        }
+    }
 }
 
 #[derive(Module, Debug)]
@@ -140,7 +146,7 @@ pub struct PolicyHead<B: Backend> {
 
 impl<B: Backend> PolicyHead<B> {
     pub fn new(filters: usize) -> Self {
-        let conv1 = nn::conv::Conv2dConfig::new([filters, filters / 2], [1, 1])
+        let conv1 = nn::conv::Conv2dConfig::new([filters, filters  / 2], [1, 1])
             .with_padding(Conv2dPaddingConfig::Valid)
             .init();
         let bn1 = nn::BatchNormConfig::new(filters / 2).init();
@@ -163,10 +169,6 @@ impl<B: Backend> PolicyHead<B> {
 
         self.activation.forward(x)
     }
-
-	pub fn forward_output(&self, input: Tensor<B, 4>) -> Tensor<B, 2> {
-		
-	}
 }
 
 #[derive(Module, Debug)]
@@ -181,11 +183,11 @@ pub struct ValueHead<B: Backend> {
 
 impl<B: Backend> ValueHead<B> {
     pub fn new(filters: usize) -> Self {
-        let conv1 = nn::conv::Conv2dConfig::new([filters, 1], [1, 1])
+        let conv1 = nn::conv::Conv2dConfig::new([filters, filters / 2], [1, 1])
             .with_padding(Conv2dPaddingConfig::Valid)
             .init();
-        let bn1 = nn::BatchNormConfig::new(2).init();
-        let fc1 = nn::LinearConfig::new(64, 256).init();
+        let bn1 = nn::BatchNormConfig::new(filters / 2).init();
+        let fc1 = nn::LinearConfig::new((filters / 2) * 8 * 8, 256).init();
         let fc2 = nn::LinearConfig::new(256, 1).init();
 
         Self {
@@ -211,39 +213,42 @@ impl<B: Backend> ValueHead<B> {
     }
 }
 
-/// Simple classification output adapted for multiple metrics.
 pub struct AlphaZeroOutput<B: Backend> {
     pub policy_loss: Tensor<B, 1>,
-	pub value_loss: Tensor<B, 1>,
+    pub value_loss: Tensor<B, 1>,
 
     pub policy: Tensor<B, 2>,
-	pub value: Tensor<B, 2>,
+    pub value: Tensor<B, 2>,
 
-    pub targets: Tensor<B, 1, Int>,
+    pub policy_targets: Tensor<B, 1, Int>,
 }
 
 impl<B: Backend> Adaptor<AccuracyInput<B>> for AlphaZeroOutput<B> {
     fn adapt(&self) -> AccuracyInput<B> {
-        AccuracyInput::new(self.policy.clone(), self.targets.clone())
+        AccuracyInput::new(self.policy.clone(), self.policy_targets.clone())
     }
 }
 
 impl<B: Backend> Adaptor<LossInput<B>> for AlphaZeroOutput<B> {
     fn adapt(&self) -> LossInput<B> {
-        LossInput::new(self.policy_loss + self.value_loss)
+        LossInput::new(self.policy_loss.clone() + self.value_loss.clone())
     }
 }
 
-// impl<B: ADBackend> TrainStep<MNISTBatch<B>, ClassificationOutput<B>> for Model<B> {
-//     fn step(&self, item: MNISTBatch<B>) -> TrainOutput<ClassificationOutput<B>> {
-//         let item = self.forward_classification(item);
+impl<B: ADBackend> TrainStep<PositionBatch<B>, AlphaZeroOutput<B>> for Model<B> {
+    fn step(&self, item: PositionBatch<B>) -> TrainOutput<AlphaZeroOutput<B>> {
+        let item = self.forward_output(item);
 
-//         TrainOutput::new(self, item.loss.backward(), item)
-//     }
-// }
+        TrainOutput::new(
+            self,
+            (item.policy_loss.clone() + item.value_loss.clone()).backward(),
+            item,
+        )
+    }
+}
 
-// impl<B: Backend> ValidStep<MNISTBatch<B>, ClassificationOutput<B>> for Model<B> {
-//     fn step(&self, item: MNISTBatch<B>) -> ClassificationOutput<B> {
-//         self.forward_classification(item)
-//     }
-// }
+impl<B: Backend> ValidStep<PositionBatch<B>, AlphaZeroOutput<B>> for Model<B> {
+    fn step(&self, item: PositionBatch<B>) -> AlphaZeroOutput<B> {
+        self.forward_output(item)
+    }
+}

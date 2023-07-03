@@ -1,5 +1,6 @@
 #![feature(generic_const_exprs)]
 
+use nn::burn::tensor::activation::softmax;
 use shakmaty::fen::*;
 use shakmaty::san::*;
 use shakmaty::uci::*;
@@ -16,11 +17,22 @@ use std::thread;
 use std::time::{Duration, Instant};
 
 use colored::Colorize;
-use nn::dfdx::{self, prelude::*, tensor::AutoDevice};
 use vampirc_uci::{parse_one, UciMessage, UciTimeControl};
+use nn::burn::record::Recorder;
+use nn::burn::module::Module;
+use nn::burn::{
+    data::{
+        dataloader::batcher::Batcher,
+        dataset::{Dataset, DatasetIterator},
+    },
+    tensor::{backend::Backend, Data, ElementConversion, Int, Tensor},
+};
 
 pub mod encoding;
 pub mod mcts;
+
+pub type InferenceBackend = nn::burn_tch::TchBackend<f32>;
+static STATE_ENCODED: &[u8] = include_bytes!("/tmp/alphazero-checkpoints/model.bin");
 
 fn main() -> Result<(), PlayError<Chess>> {
     //tch::set_num_threads(4);
@@ -30,16 +42,12 @@ fn main() -> Result<(), PlayError<Chess>> {
     );
     eprintln!("Loading neural network (64x5)");
 
-    dfdx::flush_denormals_to_zero();
+    let model: nn::Model<InferenceBackend> = nn::Model::new(5, 64);
+    let record = nn::burn::record::NoStdInferenceRecorder::default()
+        .load(STATE_ENCODED.to_vec())
+        .expect("Failed to decode state");
 
-    let dev = AutoDevice::default();
-    let mut model = dev.build_module::<nn::DenseNetworkStructure<256, 5>, f32>();
-    dbg!(model.num_trainable_params());
-    model
-        .load("/home/tt/Documents/tigon/testbed.npz")
-        .expect("failed to load model");
-    let model = Arc::new(model);
-    let dev = Arc::new(dev);
+    let model = Arc::new(model.load_record(record));
 
     let mut history = mcts::HistoryTable::new();
 
@@ -56,21 +64,17 @@ fn main() -> Result<(), PlayError<Chess>> {
 
     let inference = {
         let model = model.clone();
-        let dev = dev.clone();
         Arc::new(move |pos: &Chess| {
             let data = encoding::encode_positions(pos);
-            let tensor =
-                dev.tensor_from_vec(data.into_raw_vec(), (Const::<16>, Const::<8>, Const::<8>));
-            let (value_logits, policy_logits) = model.forward([tensor].stack());
-            let policy_logits = policy_logits.reshape::<(Const<4608>,)>();
-            let policy = (policy_logits
-                * dev.tensor_from_vec(
-                    encoding::legal_move_masks(pos).into_raw_vec(),
-                    (Const::<4608>,),
-                ))
-            .softmax()
-            .array();
-            let value = value_logits.array()[0];
+            let data = Data::<f32, 1>::from(data.into_raw_vec().as_slice());
+			let tensor = Tensor::<InferenceBackend, 1>::from_data(data.convert()).reshape([1, 22, 8, 8]);
+
+			let data = Data::<f32, 1>::from(encoding::legal_move_masks(pos).into_raw_vec().as_slice());
+			let policy_mask = Tensor::<InferenceBackend, 1>::from_data(data.convert());
+
+            let (value_logits, policy_logits) = model.forward(tensor);
+			let policy = softmax(policy_logits.reshape([4608]) * policy_mask, 0).into_data();
+            let value = value_logits.into_data().value[0];
             let mut move_probabilities = Vec::new();
             let movegen = pos.legal_moves();
             for mov in movegen {
@@ -83,10 +87,11 @@ fn main() -> Result<(), PlayError<Chess>> {
 
                 let (plane_idx, rank_idx, file_idx) = encoding::move_to_idx(&mov, flip);
                 let mov_idx = plane_idx * 64 + rank_idx * 8 + file_idx;
-                move_probabilities.push((mov, policy[mov_idx as usize]));
+
+                move_probabilities.push((mov, policy.value[mov_idx as usize]));
             }
             (
-                value[0],
+                value,
                 move_probabilities
                     .into_iter()
                     .map(|(mov, prior)| {

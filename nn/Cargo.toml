@@ -23,5 +23,9 @@ pgn-reader = "0.25.0"
 tensorboard-rs = "0.5.9"
 regex = "1.8.4"
 image = "0.24.6"
-burn = "0.7.0"
 serde = { version = "1.0.164", features = ["std", "derive"] }
+
+
+burn = { git = "https://github.com/burn-rs/burn.git" }
+burn-autodiff = { git = "https://github.com/burn-rs/burn.git" }
+burn-tch = { git = "https://github.com/burn-rs/burn.git" }

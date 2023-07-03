@@ -1,5 +1,8 @@
 use burn::{
-    data::{dataloader::batcher::Batcher},
+    data::{
+        dataloader::batcher::Batcher,
+        dataset::{Dataset, DatasetIterator},
+    },
     tensor::{backend::Backend, Data, ElementConversion, Int, Tensor},
 };
 
@@ -127,7 +130,7 @@ impl MoveDistribution {
     }
 }
 
-pub type PositionItem = (Chess, (AverageOutcome, MoveDistribution));
+pub type PositionItem = (Chess, Outcome, Move);
 
 pub struct PositionBatcher<B: Backend> {
     device: B::Device,
@@ -137,7 +140,8 @@ pub struct PositionBatcher<B: Backend> {
 pub struct PositionBatch<B: Backend> {
     pub positions: Tensor<B, 4>,
     pub value_targets: Tensor<B, 2>,
-	pub policy_tagets: Tensor<B, 2>,
+    pub policy_targets: Tensor<B, 1, Int>,
+    pub policy_masks: Tensor<B, 2>,
 }
 
 impl<B: Backend> PositionBatcher<B> {
@@ -148,22 +152,60 @@ impl<B: Backend> PositionBatcher<B> {
 
 impl<B: Backend> Batcher<PositionItem, PositionBatch<B>> for PositionBatcher<B> {
     fn batch(&self, items: Vec<PositionItem>) -> PositionBatch<B> {
-        let images = items
+        let positions = items
             .iter()
-            .map(|(pos, _)| Data::<f32, 1>::from(encode_positions(pos).into_raw_vec().as_slice()))
+            .map(|(pos, _, _)| {
+                Data::<f32, 1>::from(encode_positions(pos).into_raw_vec().as_slice())
+            })
             .map(|data| Tensor::<B, 1>::from_data(data.convert()))
             .map(|tensor| tensor.reshape([1, 22, 8, 8]))
             .collect();
 
-        let targets = items
+        let policy_targets = items
             .iter()
-            .map(|item| Tensor::<B, 1, Int>::from_data(Data::from([])))
+            .map(|(pos, _, mov)| {
+                Data::<f32, 1>::from({
+                    let (plane_idx, rank_idx, file_idx) =
+                        move_to_idx(&mov, pos.turn() == Color::Black);
+                    let mov_idx = plane_idx * 64 + rank_idx * 8 + file_idx;
+                    [(mov_idx as i64).elem()]
+                })
+            })
+            .map(|data| Tensor::<B, 1, Int>::from_data(data.convert()))
             .collect();
 
-        let images = Tensor::cat(images, 0).to_device(&self.device);
-        let targets = Tensor::cat(targets, 0).to_device(&self.device);
+        let policy_masks = items
+            .iter()
+            .map(|(pos, _, _)| {
+                Data::<f32, 1>::from(legal_move_masks(pos).into_raw_vec().as_slice())
+            })
+            .map(|data| Tensor::<B, 1>::from_data(data.convert()))
+            .map(|tensor| tensor.reshape([1, 4608]))
+            .collect();
 
-        PositionBatch { positions, targets }
+        let value_targets = items
+            .iter()
+            .map(|(pos, outcome, _)| {
+                Data::<f32, 1>::from([match outcome {
+                    Outcome::Decisive { winner } => turn_to_side(*winner) as f32,
+                    Outcome::Draw => 0.0,
+                } * turn_to_side(pos.turn()) as f32])
+            })
+            .map(|data| Tensor::<B, 1>::from_data(data.convert()))
+            .map(|tensor| tensor.reshape([1, 1]))
+            .collect();
+
+        let positions = Tensor::cat(positions, 0).to_device(&self.device);
+        let policy_targets = Tensor::cat(policy_targets, 0).to_device(&self.device);
+        let value_targets = Tensor::cat(value_targets, 0).to_device(&self.device);
+        let policy_masks = Tensor::cat(policy_masks, 0).to_device(&self.device);
+
+        PositionBatch {
+            positions,
+            policy_targets,
+            value_targets,
+            policy_masks,
+        }
     }
 }
 
@@ -171,5 +213,64 @@ pub fn turn_to_side(color: Color) -> i8 {
     match color {
         Color::White => 1,
         Color::Black => -1,
+    }
+}
+
+use std::sync::Mutex;
+use std::collections::VecDeque;
+
+pub struct ChessPositionSet {
+    reader: BufferedReader<std::fs::File>,
+    cached_positions: Vec<PositionItem>,
+    len: usize,
+	batch_size: usize,
+	counter: usize,
+	visitor: PgnVisitor,
+}
+
+impl ChessPositionSet {
+    pub fn new(reader: BufferedReader<std::fs::File>, len: usize, batch_size: usize) -> Self {
+        let mut new = Self {
+            reader: reader,
+            len,
+            cached_positions: Vec::new(),
+			counter: 0,
+			visitor: PgnVisitor::new(),
+			batch_size
+        };
+		new.fill();
+		new
+    }
+
+	pub fn fill(&mut self) {
+		self.counter = 0;
+		self.cached_positions.clear();
+		while self.cached_positions.len() < self.batch_size {
+			if let Some(Some(result)) =
+				self.reader.read_game(&mut self.visitor).expect("failed to read game")
+			{
+				for pos in result.0 {
+					self.cached_positions.push((pos.0, result.1, pos.1));
+				}
+			}
+		}
+	}
+}
+
+pub struct PositionDataset(pub Mutex<ChessPositionSet>);
+
+impl Dataset<PositionItem> for PositionDataset {
+    fn get(&self, index: usize) -> Option<PositionItem> {
+        let mut set = self.0.lock().unwrap();
+        let pos = set.cached_positions.get(index).cloned();
+		set.counter += 1;
+		if set.counter >= 250000 && set.batch_size != set.len {
+			set.fill();
+		}
+		pos
+    }
+
+    fn len(&self) -> usize {
+        self.0.lock().unwrap().batch_size
     }
 }
