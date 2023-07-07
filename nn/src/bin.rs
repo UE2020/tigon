@@ -1,19 +1,19 @@
 use std::sync::Mutex;
 
 use burn::module::Module;
-use burn::optim::decay::WeightDecayConfig;
-use burn::optim::AdamConfig;
-use burn::record::{CompactRecorder, NoStdTrainingRecorder, Recorder};
+use burn::optim::decay::{WeightDecay, WeightDecayConfig};
+use burn::optim::momentum::MomentumConfig;
+use burn::optim::*;
+use burn::record::{NoStdTrainingRecorder, Recorder};
 use burn::{
     config::Config,
-    data::{dataloader::DataLoaderBuilder, dataset::source::huggingface::MNISTDataset},
+    data::dataloader::DataLoaderBuilder,
     tensor::backend::ADBackend,
     train::{
         metric::{AccuracyMetric, LossMetric},
         LearnerBuilder,
     },
 };
-use burn::data::dataset::transform::PartialDataset;
 
 use nn::*;
 use pgn_reader::BufferedReader;
@@ -25,21 +25,21 @@ pub struct AlphaZeroTrainerConfig {
     #[config(default = 7)]
     pub num_epochs: usize,
 
-    #[config(default = 1024)]
+    #[config(default = 2048)]
     pub batch_size: usize,
 
     //#[config(default = 4)]
     //pub num_workers: usize,
-
     #[config(default = 42)]
     pub seed: u64,
 
-    pub optimizer: AdamConfig,
+    pub optimizer: SgdConfig,
 }
 
 pub fn run<B: ADBackend>(device: B::Device) {
     // Config
-    let config_optimizer = AdamConfig::new().with_weight_decay(None);
+    let config_optimizer = SgdConfig::new().with_momentum(Some(MomentumConfig::new().with_nesterov(true).with_momentum(0.9))).with_weight_decay(Some(WeightDecayConfig::new(1e-4)));
+	//let config_optimizer = AdamConfig::new().with_epsilon(1e-8);
     let config = AlphaZeroTrainerConfig::new(config_optimizer);
     B::seed(config.seed);
 
@@ -57,7 +57,7 @@ pub fn run<B: ADBackend>(device: B::Device) {
                     .expect("training data not found"),
             ),
             10_000_000,
-			1000000,
+            1_000_000,
         ))));
     let dataloader_test = DataLoaderBuilder::new(batcher_valid)
         .batch_size(config.batch_size)
@@ -69,19 +69,19 @@ pub fn run<B: ADBackend>(device: B::Device) {
                     .expect("training data not found"),
             ),
             100000,
-			100000,
+            100000,
         ))));
 
     // Model
     let learner = LearnerBuilder::new(ARTIFACT_DIR)
-        .metric_train(AccuracyMetric::new())
-        .metric_valid(AccuracyMetric::new())
-        .metric_train(LossMetric::new())
-        .metric_valid(LossMetric::new())
+        .metric_train_plot(AccuracyMetric::new())
+        .metric_valid_plot(AccuracyMetric::new())
+        .metric_train_plot(LossMetric::new())
+        .metric_valid_plot(LossMetric::new())
         .with_file_checkpointer(1, NoStdTrainingRecorder::new())
         .devices(vec![device])
         .num_epochs(config.num_epochs)
-        .build(Model::new(5, 64), config.optimizer.init(), 1e-3);
+        .build(Model::new(10, 128), config.optimizer.init(), 1e-1);
 
     let model_trained = learner.fit(dataloader_train, dataloader_test);
 
@@ -102,7 +102,7 @@ use burn_tch::{TchBackend, TchDevice};
 
 fn main() {
     #[cfg(not(target_os = "macos"))]
-    let device = TchDevice::Cuda(0);
+    let device = TchDevice::Cpu;
     #[cfg(target_os = "macos")]
     let device = TchDevice::Mps;
 

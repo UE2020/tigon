@@ -3,7 +3,7 @@ use burn::{
         dataloader::batcher::Batcher,
         dataset::{Dataset, DatasetIterator},
     },
-    tensor::{backend::Backend, Data, ElementConversion, Int, Tensor},
+    tensor::{backend::Backend, Data, ElementConversion, Int, Tensor, Shape},
 };
 
 use pgn_reader::*;
@@ -155,13 +155,16 @@ impl<B: Backend> Batcher<PositionItem, PositionBatch<B>> for PositionBatcher<B> 
         let positions = items
             .iter()
             .map(|(pos, _, _)| {
-                Data::<f32, 1>::from(encode_positions(pos).into_raw_vec().as_slice())
+                Data::<f32, 4>::new(encode_positions(pos).into_raw_vec(), Shape::new([1, 22, 8, 8]))
             })
-            .map(|data| Tensor::<B, 1>::from_data(data.convert()))
-            .map(|tensor| tensor.reshape([1, 22, 8, 8]))
+            .map(|data| Tensor::<B, 4>::from_data(data.convert()))
+			.map(|tensor| {
+				//dbg!(&tensor.clone().into_data());
+				tensor
+			})
             .collect();
 
-        let policy_targets = items
+		let policy_targets = items
             .iter()
             .map(|(pos, _, mov)| {
                 Data::<f32, 1>::from({
@@ -177,10 +180,9 @@ impl<B: Backend> Batcher<PositionItem, PositionBatch<B>> for PositionBatcher<B> 
         let policy_masks = items
             .iter()
             .map(|(pos, _, _)| {
-                Data::<f32, 1>::from(legal_move_masks(pos).into_raw_vec().as_slice())
+                Data::<f32, 2>::new(legal_move_masks(pos).into_raw_vec(), Shape::new([1, 4608]))
             })
-            .map(|data| Tensor::<B, 1>::from_data(data.convert()))
-            .map(|tensor| tensor.reshape([1, 4608]))
+            .map(|data| Tensor::<B, 2>::from_data(data.convert()))
             .collect();
 
         let value_targets = items
@@ -217,15 +219,14 @@ pub fn turn_to_side(color: Color) -> i8 {
 }
 
 use std::sync::Mutex;
-use std::collections::VecDeque;
 
 pub struct ChessPositionSet {
     reader: BufferedReader<std::fs::File>,
     cached_positions: Vec<PositionItem>,
     len: usize,
-	batch_size: usize,
-	counter: usize,
-	visitor: PgnVisitor,
+    batch_size: usize,
+    counter: usize,
+    visitor: PgnVisitor,
 }
 
 impl ChessPositionSet {
@@ -234,15 +235,15 @@ impl ChessPositionSet {
             reader: reader,
             len,
             cached_positions: Vec::new(),
-			counter: 0,
-			visitor: PgnVisitor::new(),
-			batch_size
+            counter: 0,
+            visitor: PgnVisitor::new(),
+            batch_size,
         };
-		new.fill();
-		new
+        new.fill();
+        new
     }
 
-	pub fn fill(&mut self) {
+    pub fn fill(&mut self) {
 		self.counter = 0;
 		self.cached_positions.clear();
 		while self.cached_positions.len() < self.batch_size {
@@ -254,7 +255,7 @@ impl ChessPositionSet {
 				}
 			}
 		}
-	}
+    }
 }
 
 pub struct PositionDataset(pub Mutex<ChessPositionSet>);
@@ -263,11 +264,12 @@ impl Dataset<PositionItem> for PositionDataset {
     fn get(&self, index: usize) -> Option<PositionItem> {
         let mut set = self.0.lock().unwrap();
         let pos = set.cached_positions.get(index).cloned();
-		set.counter += 1;
-		if set.counter >= 250000 && set.batch_size != set.len {
-			set.fill();
-		}
-		pos
+        set.counter += 1;
+        if set.counter >= set.batch_size && set.batch_size != set.len {
+			println!("Filling...");
+            set.fill();
+        }
+        pos
     }
 
     fn len(&self) -> usize {

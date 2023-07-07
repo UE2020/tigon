@@ -1,5 +1,6 @@
 #![feature(generic_const_exprs)]
 
+use nn::burn::tensor::Shape;
 use nn::burn::tensor::activation::softmax;
 use shakmaty::fen::*;
 use shakmaty::san::*;
@@ -17,9 +18,8 @@ use std::thread;
 use std::time::{Duration, Instant};
 
 use colored::Colorize;
-use vampirc_uci::{parse_one, UciMessage, UciTimeControl};
-use nn::burn::record::Recorder;
 use nn::burn::module::Module;
+use nn::burn::record::Recorder;
 use nn::burn::{
     data::{
         dataloader::batcher::Batcher,
@@ -27,6 +27,7 @@ use nn::burn::{
     },
     tensor::{backend::Backend, Data, ElementConversion, Int, Tensor},
 };
+use vampirc_uci::{parse_one, UciMessage, UciTimeControl};
 
 pub mod encoding;
 pub mod mcts;
@@ -67,14 +68,17 @@ fn main() -> Result<(), PlayError<Chess>> {
         Arc::new(move |pos: &Chess| {
             let data = encoding::encode_positions(pos);
             let data = Data::<f32, 1>::from(data.into_raw_vec().as_slice());
-			let tensor = Tensor::<InferenceBackend, 1>::from_data(data.convert()).reshape([1, 22, 8, 8]);
+            let tensor =
+                Tensor::<InferenceBackend, 1>::from_data(data.convert()).reshape([1, 22, 8, 8]);
 
-			let data = Data::<f32, 1>::from(encoding::legal_move_masks(pos).into_raw_vec().as_slice());
-			let policy_mask = Tensor::<InferenceBackend, 1>::from_data(data.convert());
+            let data =
+                Data::<f32, 2>::new(encoding::legal_move_masks(pos).into_raw_vec(), Shape::new([1, 4608]));
+            let policy_mask = Tensor::<InferenceBackend, 2>::from_data(data.convert());
 
-            let (value_logits, policy_logits) = model.forward(tensor);
-			let policy = softmax(policy_logits.reshape([4608]) * policy_mask, 0).into_data();
-            let value = value_logits.into_data().value[0];
+            let (value_logits, policy_logits) = model.forward(tensor, policy_mask);
+            let policy = softmax(policy_logits.reshape([4608]), 0).into_data();
+            let value = value_logits.into_data().value;
+			dbg!(&value);
             let mut move_probabilities = Vec::new();
             let movegen = pos.legal_moves();
             for mov in movegen {
@@ -91,7 +95,7 @@ fn main() -> Result<(), PlayError<Chess>> {
                 move_probabilities.push((mov, policy.value[mov_idx as usize]));
             }
             (
-                value,
+                value[0],
                 move_probabilities
                     .into_iter()
                     .map(|(mov, prior)| {
