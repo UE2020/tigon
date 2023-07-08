@@ -25,7 +25,7 @@ pub struct AlphaZeroTrainerConfig {
     #[config(default = 7)]
     pub num_epochs: usize,
 
-    #[config(default = 2048)]
+    #[config(default = 1024)]
     pub batch_size: usize,
 
     //#[config(default = 4)]
@@ -33,13 +33,13 @@ pub struct AlphaZeroTrainerConfig {
     #[config(default = 42)]
     pub seed: u64,
 
-    pub optimizer: SgdConfig,
+    pub optimizer: AdamConfig,
 }
 
 pub fn run<B: ADBackend>(device: B::Device) {
     // Config
-    let config_optimizer = SgdConfig::new().with_momentum(Some(MomentumConfig::new().with_nesterov(true).with_momentum(0.9))).with_weight_decay(Some(WeightDecayConfig::new(1e-4)));
-	//let config_optimizer = AdamConfig::new().with_epsilon(1e-8);
+    //let config_optimizer = SgdConfig::new().with_momentum(Some(MomentumConfig::new().with_nesterov(true).with_momentum(0.9))).with_weight_decay(Some(WeightDecayConfig::new(1e-4)));
+    let config_optimizer = AdamConfig::new().with_epsilon(1e-8);
     let config = AlphaZeroTrainerConfig::new(config_optimizer);
     B::seed(config.seed);
 
@@ -81,7 +81,7 @@ pub fn run<B: ADBackend>(device: B::Device) {
         .with_file_checkpointer(1, NoStdTrainingRecorder::new())
         .devices(vec![device])
         .num_epochs(config.num_epochs)
-        .build(Model::new(10, 128), config.optimizer.init(), 1e-1);
+        .build(Model::new(5, 64), config.optimizer.init(), 0.001);
 
     let model_trained = learner.fit(dataloader_train, dataloader_test);
 

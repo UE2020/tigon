@@ -3,7 +3,7 @@ use burn::{
         dataloader::batcher::Batcher,
         dataset::{Dataset, DatasetIterator},
     },
-    tensor::{backend::Backend, Data, ElementConversion, Int, Tensor, Shape},
+    tensor::{backend::Backend, Data, ElementConversion, Int, Shape, Tensor},
 };
 
 use pgn_reader::*;
@@ -155,26 +155,24 @@ impl<B: Backend> Batcher<PositionItem, PositionBatch<B>> for PositionBatcher<B> 
         let positions = items
             .iter()
             .map(|(pos, _, _)| {
-                Data::<f32, 4>::new(encode_positions(pos).into_raw_vec(), Shape::new([1, 22, 8, 8]))
+                Data::<f32, 4>::new(
+                    encode_positions(pos).into_raw_vec(),
+                    Shape::new([1, 22, 8, 8]),
+                )
             })
             .map(|data| Tensor::<B, 4>::from_data(data.convert()))
-			.map(|tensor| {
-				//dbg!(&tensor.clone().into_data());
-				tensor
-			})
             .collect();
 
-		let policy_targets = items
+        let policy_targets = items
             .iter()
             .map(|(pos, _, mov)| {
-                Data::<f32, 1>::from({
+                Tensor::<B, 1, Int>::from_data(Data::from({
                     let (plane_idx, rank_idx, file_idx) =
                         move_to_idx(&mov, pos.turn() == Color::Black);
                     let mov_idx = plane_idx * 64 + rank_idx * 8 + file_idx;
                     [(mov_idx as i64).elem()]
-                })
+                }))
             })
-            .map(|data| Tensor::<B, 1, Int>::from_data(data.convert()))
             .collect();
 
         let policy_masks = items
@@ -188,13 +186,12 @@ impl<B: Backend> Batcher<PositionItem, PositionBatch<B>> for PositionBatcher<B> 
         let value_targets = items
             .iter()
             .map(|(pos, outcome, _)| {
-                Data::<f32, 1>::from([match outcome {
+                Data::<f32, 2>::from([[match outcome {
                     Outcome::Decisive { winner } => turn_to_side(*winner) as f32,
                     Outcome::Draw => 0.0,
-                } * turn_to_side(pos.turn()) as f32])
+                } * turn_to_side(pos.turn()) as f32]])
             })
-            .map(|data| Tensor::<B, 1>::from_data(data.convert()))
-            .map(|tensor| tensor.reshape([1, 1]))
+            .map(|data| Tensor::<B, 2>::from_data(data.convert()))
             .collect();
 
         let positions = Tensor::cat(positions, 0).to_device(&self.device);
@@ -244,17 +241,19 @@ impl ChessPositionSet {
     }
 
     pub fn fill(&mut self) {
-		self.counter = 0;
-		self.cached_positions.clear();
-		while self.cached_positions.len() < self.batch_size {
-			if let Some(Some(result)) =
-				self.reader.read_game(&mut self.visitor).expect("failed to read game")
-			{
-				for pos in result.0 {
-					self.cached_positions.push((pos.0, result.1, pos.1));
-				}
-			}
-		}
+        self.counter = 0;
+        self.cached_positions.clear();
+        while self.cached_positions.len() < self.batch_size {
+            if let Some(Some(result)) = self
+                .reader
+                .read_game(&mut self.visitor)
+                .expect("failed to read game")
+            {
+                for pos in result.0 {
+                    self.cached_positions.push((pos.0, result.1, pos.1));
+                }
+            }
+        }
     }
 }
 
@@ -266,7 +265,7 @@ impl Dataset<PositionItem> for PositionDataset {
         let pos = set.cached_positions.get(index).cloned();
         set.counter += 1;
         if set.counter >= set.batch_size && set.batch_size != set.len {
-			println!("Filling...");
+            println!("Filling...");
             set.fill();
         }
         pos

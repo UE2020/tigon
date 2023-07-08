@@ -1,7 +1,7 @@
 #![feature(generic_const_exprs)]
 
-use nn::burn::tensor::Shape;
 use nn::burn::tensor::activation::softmax;
+use nn::burn::tensor::Shape;
 use shakmaty::fen::*;
 use shakmaty::san::*;
 use shakmaty::uci::*;
@@ -71,14 +71,16 @@ fn main() -> Result<(), PlayError<Chess>> {
             let tensor =
                 Tensor::<InferenceBackend, 1>::from_data(data.convert()).reshape([1, 22, 8, 8]);
 
-            let data =
-                Data::<f32, 2>::new(encoding::legal_move_masks(pos).into_raw_vec(), Shape::new([1, 4608]));
+            let data = Data::<f32, 2>::new(
+                encoding::legal_move_masks(pos).into_raw_vec(),
+                Shape::new([1, 4608]),
+            );
             let policy_mask = Tensor::<InferenceBackend, 2>::from_data(data.convert());
 
             let (value_logits, policy_logits) = model.forward(tensor, policy_mask);
             let policy = softmax(policy_logits.reshape([4608]), 0).into_data();
             let value = value_logits.into_data().value;
-			dbg!(&value);
+            dbg!(&value);
             let mut move_probabilities = Vec::new();
             let movegen = pos.legal_moves();
             for mov in movegen {

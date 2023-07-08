@@ -186,7 +186,7 @@ pub fn encode_positions<B: Position>(pos: &B) -> EncodedPositions {
         }
     }
 
-	let pawn_difference = (pawns & white).count() as isize - (pawns & black).count() as isize + 8;
+    let pawn_difference = (pawns & white).count() as isize - (pawns & black).count() as isize + 8;
     let knight_difference =
         (knights & white).count() as isize - (knights & black).count() as isize + 10;
     let bishop_difference =
