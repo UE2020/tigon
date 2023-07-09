@@ -215,12 +215,12 @@ pub struct ValueHead<B: Backend> {
 
 impl<B: Backend> ValueHead<B> {
     pub fn new(filters: usize) -> Self {
-        let conv1 = nn::conv::Conv2dConfig::new([filters, 1], [1, 1])
+        let conv1 = nn::conv::Conv2dConfig::new([filters, 4], [1, 1])
             .with_padding(Conv2dPaddingConfig::Valid)
             .with_bias(false)
             .init();
-        let bn1 = nn::BatchNormConfig::new(1).init();
-        let fc1 = nn::LinearConfig::new(1 * 8 * 8, 256).init();
+        let bn1 = nn::BatchNormConfig::new(4).init();
+        let fc1 = nn::LinearConfig::new(4 * 8 * 8, 256).init();
         let fc2 = nn::LinearConfig::new(256, 1).init();
 
         Self {
@@ -304,7 +304,7 @@ impl<B: ADBackend> TrainStep<PositionBatch<B>, AlphaZeroOutput<B>> for Model<B> 
 
         TrainOutput::new(
             self,
-            ((item.value_loss.clone()) + item.policy_loss.clone()).backward(),
+            ((item.value_loss.clone() * 0.01) + item.policy_loss.clone()).backward(),
             item,
         )
     }

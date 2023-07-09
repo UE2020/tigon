@@ -33,7 +33,7 @@ pub mod encoding;
 pub mod mcts;
 
 pub type InferenceBackend = nn::burn_tch::TchBackend<f32>;
-static STATE_ENCODED: &[u8] = include_bytes!("/tmp/alphazero-checkpoints/model.bin");
+static STATE_ENCODED: &[u8] = include_bytes!("../../weights/model.bin");
 
 fn main() -> Result<(), PlayError<Chess>> {
     //tch::set_num_threads(4);
@@ -80,7 +80,6 @@ fn main() -> Result<(), PlayError<Chess>> {
             let (value_logits, policy_logits) = model.forward(tensor, policy_mask);
             let policy = softmax(policy_logits.reshape([4608]), 0).into_data();
             let value = value_logits.into_data().value;
-            dbg!(&value);
             let mut move_probabilities = Vec::new();
             let movegen = pos.legal_moves();
             for mov in movegen {

@@ -5,3 +5,4 @@ engine/*.pt
 *.npz
 *.gz
 /logdir
+/weights

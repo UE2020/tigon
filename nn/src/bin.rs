@@ -1,7 +1,7 @@
 use std::sync::Mutex;
 
 use burn::module::Module;
-use burn::optim::*;
+use burn::optim::{*, decay::WeightDecayConfig, momentum::MomentumConfig};
 use burn::record::{NoStdTrainingRecorder, Recorder};
 use burn::{
     config::Config,
@@ -13,8 +13,11 @@ use burn::{
     },
 };
 
+use lr::AlphaZeroLR;
 use nn::*;
 use pgn_reader::BufferedReader;
+
+mod lr;
 
 static ARTIFACT_DIR: &str = "/tmp/alphazero-checkpoints";
 
@@ -31,13 +34,13 @@ pub struct AlphaZeroTrainerConfig {
     #[config(default = 42)]
     pub seed: u64,
 
-    pub optimizer: AdamConfig,
+    pub optimizer: SgdConfig,
 }
 
 pub fn run<B: ADBackend>(device: B::Device) {
     // Config
-    //let config_optimizer = SgdConfig::new().with_momentum(Some(MomentumConfig::new().with_nesterov(true).with_momentum(0.9))).with_weight_decay(Some(WeightDecayConfig::new(1e-4)));
-    let config_optimizer = AdamConfig::new().with_epsilon(1e-5); // with_epsilon(1e-8).with_weight_decay(Some(WeightDecayConfig::new(1e-4)));
+    let config_optimizer = SgdConfig::new().with_momentum(Some(MomentumConfig::new().with_nesterov(true).with_momentum(0.9))).with_weight_decay(Some(WeightDecayConfig::new(1e-4)));
+    //let config_optimizer = AdamConfig::new().with_epsilon(1e-5); // with_epsilon(1e-8).with_weight_decay(Some(WeightDecayConfig::new(1e-4)));
     let config = AlphaZeroTrainerConfig::new(config_optimizer);
     B::seed(config.seed);
 
@@ -79,7 +82,7 @@ pub fn run<B: ADBackend>(device: B::Device) {
         .with_file_checkpointer(1, NoStdTrainingRecorder::new())
         .devices(vec![device])
         .num_epochs(config.num_epochs)
-        .build(Model::new(5, 64), config.optimizer.init(), 1e-3);
+        .build(Model::new(10, 128), config.optimizer.init(), AlphaZeroLR::new(0.1, 80000));
 
     let model_trained = learner.fit(dataloader_train, dataloader_test);
 
@@ -100,7 +103,7 @@ use burn_tch::{TchBackend, TchDevice};
 
 fn main() {
     #[cfg(not(target_os = "macos"))]
-    let device = TchDevice::Cpu;
+    let device = TchDevice::Cuda(0);
     #[cfg(target_os = "macos")]
     let device = TchDevice::Mps;
 
