@@ -304,7 +304,7 @@ impl<B: ADBackend> TrainStep<PositionBatch<B>, AlphaZeroOutput<B>> for Model<B> 
 
         TrainOutput::new(
             self,
-            ((item.value_loss.clone() * 0.01) + item.policy_loss.clone()).backward(),
+            ((item.value_loss.clone()) + item.policy_loss.clone()).backward(),
             item,
         )
     }
