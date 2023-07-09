@@ -187,9 +187,9 @@ impl<B: Backend> Batcher<PositionItem, PositionBatch<B>> for PositionBatcher<B> 
             .iter()
             .map(|(pos, outcome, _)| {
                 Data::<f32, 2>::from([[match outcome {
-                    Outcome::Decisive { winner } => turn_to_side(*winner) as f32,
-                    Outcome::Draw => 0.0,
-                } * turn_to_side(pos.turn()) as f32]])
+					Outcome::Draw => 0.0,
+					Outcome::Decisive { winner } => turn_to_side(*winner) as f32 * turn_to_side(pos.turn()) as f32
+				}]])
             })
             .map(|data| Tensor::<B, 2>::from_data(data.convert()))
             .collect();
@@ -265,7 +265,6 @@ impl Dataset<PositionItem> for PositionDataset {
         let pos = set.cached_positions.get(index).cloned();
         set.counter += 1;
         if set.counter >= set.batch_size && set.batch_size != set.len {
-            println!("Filling...");
             set.fill();
         }
         pos

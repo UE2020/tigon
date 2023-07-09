@@ -31,7 +31,7 @@ fn global_data() -> &'static Mutex<Writer> {
     static INSTANCE: OnceCell<Mutex<Writer>> = OnceCell::new();
     INSTANCE.get_or_init(|| {
         Mutex::new(Writer(
-            tensorboard::summary_writer::SummaryWriter::new("logdir/burn-T5"),
+            tensorboard::summary_writer::SummaryWriter::new("logdir/burn-T1"),
             0,
         ))
     })
@@ -200,7 +200,7 @@ impl<B: Backend> PolicyHead<B> {
         let x = x.reshape([batch_size, planes * height * width]);
         let x = self.fc1.forward(x);
 
-        self.activation.forward(x)
+        x
     }
 }
 
@@ -244,7 +244,7 @@ impl<B: Backend> ValueHead<B> {
         let x = self.fc2.forward(x);
         let x = x.tanh();
 
-        self.activation.forward(x)
+        x
     }
 }
 
