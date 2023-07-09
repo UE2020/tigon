@@ -103,7 +103,7 @@ use burn_tch::{TchBackend, TchDevice};
 
 fn main() {
     #[cfg(not(target_os = "macos"))]
-    let device = TchDevice::Cpu;
+    let device = TchDevice::Cuda(0);
     #[cfg(target_os = "macos")]
     let device = TchDevice::Mps;
 
