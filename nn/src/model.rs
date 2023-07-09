@@ -8,12 +8,11 @@ use burn::{
     },
     tensor::{
         backend::{ADBackend, Backend},
-        loss::cross_entropy_with_logits,
         Int, Tensor,
     },
     train::{
         metric::{AccuracyInput, Adaptor, LossInput},
-        ClassificationOutput, TrainOutput, TrainStep, ValidStep,
+        TrainOutput, TrainStep, ValidStep,
     },
 };
 

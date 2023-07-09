@@ -1,8 +1,6 @@
 use std::sync::Mutex;
 
 use burn::module::Module;
-use burn::optim::decay::{WeightDecay, WeightDecayConfig};
-use burn::optim::momentum::MomentumConfig;
 use burn::optim::*;
 use burn::record::{NoStdTrainingRecorder, Recorder};
 use burn::{
@@ -39,7 +37,7 @@ pub struct AlphaZeroTrainerConfig {
 pub fn run<B: ADBackend>(device: B::Device) {
     // Config
     //let config_optimizer = SgdConfig::new().with_momentum(Some(MomentumConfig::new().with_nesterov(true).with_momentum(0.9))).with_weight_decay(Some(WeightDecayConfig::new(1e-4)));
-    let config_optimizer = AdamConfig::new().with_epsilon(1e-8); // with_epsilon(1e-8).with_weight_decay(Some(WeightDecayConfig::new(1e-4)));
+    let config_optimizer = AdamConfig::new().with_epsilon(1e-5); // with_epsilon(1e-8).with_weight_decay(Some(WeightDecayConfig::new(1e-4)));
     let config = AlphaZeroTrainerConfig::new(config_optimizer);
     B::seed(config.seed);
 

@@ -1,7 +1,7 @@
 use burn::{
     data::{
         dataloader::batcher::Batcher,
-        dataset::{Dataset, DatasetIterator},
+        dataset::{Dataset},
     },
     tensor::{backend::Backend, Data, ElementConversion, Int, Shape, Tensor},
 };
@@ -187,9 +187,11 @@ impl<B: Backend> Batcher<PositionItem, PositionBatch<B>> for PositionBatcher<B> 
             .iter()
             .map(|(pos, outcome, _)| {
                 Data::<f32, 2>::from([[match outcome {
-					Outcome::Draw => 0.0,
-					Outcome::Decisive { winner } => turn_to_side(*winner) as f32 * turn_to_side(pos.turn()) as f32
-				}]])
+                    Outcome::Draw => 0.0,
+                    Outcome::Decisive { winner } => {
+                        turn_to_side(*winner) as f32 * turn_to_side(pos.turn()) as f32
+                    }
+                }]])
             })
             .map(|data| Tensor::<B, 2>::from_data(data.convert()))
             .collect();
