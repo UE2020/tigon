@@ -23,7 +23,7 @@ static ARTIFACT_DIR: &str = "/tmp/alphazero-checkpoints";
 
 #[derive(Config)]
 pub struct AlphaZeroTrainerConfig {
-    #[config(default = 14)]
+    #[config(default = 28)]
     pub num_epochs: usize,
 
     #[config(default = 1024)]
@@ -82,7 +82,7 @@ pub fn run<B: ADBackend>(device: B::Device) {
         .with_file_checkpointer(1, NoStdTrainingRecorder::new())
         .devices(vec![device])
         .num_epochs(config.num_epochs)
-		.checkpoint(7)
+		.checkpoint(12)
         .build(Model::new(7, 64), config.optimizer.init(), AlphaZeroLR::new(1e-3, 40000));
 
     let model_trained = learner.fit(dataloader_train, dataloader_test);
