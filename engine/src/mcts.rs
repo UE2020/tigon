@@ -462,7 +462,7 @@ impl<B: Position + Syzygy + Clone + Eq + PartialEq + Hash + std::fmt::Debug> MCT
 }
 
 pub fn q_to_cp(q: f32) -> i32 {
-    (-4.0 * (1.0 / q - 1.0).log10() * 100.0) as i32
-    // let q = q * 2.0 - 1.0;
-    // (-(q.signum() * (1.0 - q.abs()).ln() / (1.2f32).ln()) * 100.0 / 2.0) as i32
+    //(-4.0 * (1.0 / q - 1.0).log10() * 100.0) as i32
+    let q = q * 2.0 - 1.0;
+    (-(q.signum() * (1.0 - q.abs()).ln() / (1.2f32).ln()) * 100.0 / 2.0) as i32
 }

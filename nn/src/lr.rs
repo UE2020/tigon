@@ -19,10 +19,10 @@ impl LRScheduler for AlphaZeroLR {
 
     fn step(&mut self) -> LearningRate {
         self.steps += 1;
-		// if self.steps % self.step_size == 0 {
-		// 	self.lr /= 10.0;
-		// }
-		self.lr / 10.0
+		if self.steps % self.step_size == 0 {
+			self.lr /= 10.0;
+		}
+		self.lr
     }
 
     fn to_record(&self) -> Self::Record {}

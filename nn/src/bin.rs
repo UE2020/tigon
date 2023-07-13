@@ -23,7 +23,7 @@ static ARTIFACT_DIR: &str = "/tmp/alphazero-checkpoints";
 
 #[derive(Config)]
 pub struct AlphaZeroTrainerConfig {
-    #[config(default = 28)]
+    #[config(default = 255)]
     pub num_epochs: usize,
 
     #[config(default = 1024)]
@@ -34,13 +34,13 @@ pub struct AlphaZeroTrainerConfig {
     #[config(default = 42)]
     pub seed: u64,
 
-    pub optimizer: AdamConfig,
+    pub optimizer: SgdConfig,
 }
 
 pub fn run<B: ADBackend>(device: B::Device) {
     // Config
-    //let config_optimizer = SgdConfig::new().with_momentum(Some(MomentumConfig::new().with_nesterov(true).with_momentum(0.9))).with_weight_decay(Some(WeightDecayConfig::new(1e-4)));
-    let config_optimizer = AdamConfig::new().with_epsilon(1e-5); // with_epsilon(1e-8).with_weight_decay(Some(WeightDecayConfig::new(1e-4)));
+    let config_optimizer = SgdConfig::new().with_momentum(Some(MomentumConfig::new().with_nesterov(true).with_momentum(0.9))).with_weight_decay(Some(WeightDecayConfig::new(1e-4)));
+    //let config_optimizer = AdamConfig::new().with_epsilon(1e-5); // with_epsilon(1e-8).with_weight_decay(Some(WeightDecayConfig::new(1e-4)));
     let config = AlphaZeroTrainerConfig::new(config_optimizer);
     B::seed(config.seed);
 
@@ -75,15 +75,14 @@ pub fn run<B: ADBackend>(device: B::Device) {
 
     // Model
     let learner = LearnerBuilder::new(ARTIFACT_DIR)
-        .metric_train(AccuracyMetric::new())
-        .metric_valid(AccuracyMetric::new())
-        .metric_train(LossMetric::new())
-        .metric_valid(LossMetric::new())
+        //.metric_train_plot(AccuracyMetric::new())
+        //.metric_valid_plot(AccuracyMetric::new())
+        //.metric_train_plot(LossMetric::new())
+        //.metric_valid_plot(LossMetric::new())
         .with_file_checkpointer(1, NoStdTrainingRecorder::new())
         .devices(vec![device])
         .num_epochs(config.num_epochs)
-		.checkpoint(12)
-        .build(Model::new(7, 64), config.optimizer.init(), AlphaZeroLR::new(1e-3, 40000));
+        .build(Model::new(10, 128), config.optimizer.init(), AlphaZeroLR::new(0.1, 80000));
 
     let model_trained = learner.fit(dataloader_train, dataloader_test);
 

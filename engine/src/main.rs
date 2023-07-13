@@ -33,7 +33,7 @@ pub mod encoding;
 pub mod mcts;
 
 pub type InferenceBackend = nn::burn_tch::TchBackend<f32>;
-static STATE_ENCODED: &[u8] = include_bytes!("../../weights/model.bin");
+//static STATE_ENCODED: &[u8] = include_bytes!("../../weights/model.bin");
 
 fn main() -> Result<(), PlayError<Chess>> {
     //tch::set_num_threads(4);
@@ -41,11 +41,11 @@ fn main() -> Result<(), PlayError<Chess>> {
         "Current working directory: {}",
         std::env::current_dir().unwrap().display()
     );
-    eprintln!("Loading neural network (64x5)");
+    eprintln!("Loading neural network (128x10)");
 
-    let model: nn::Model<InferenceBackend> = nn::Model::new(5, 64);
-    let record = nn::burn::record::NoStdInferenceRecorder::default()
-        .load(STATE_ENCODED.to_vec())
+    let model: nn::Model<InferenceBackend> = nn::Model::new(10, 128);
+    let record = nn::burn::record::NoStdTrainingRecorder::default()
+        .load("/home/tt/Documents/tigon/weights/model.bin".into())
         .expect("Failed to decode state");
 
     let model = Arc::new(model.load_record(record));
