@@ -182,12 +182,12 @@ pub struct PolicyHead<B: Backend> {
 
 impl<B: Backend> PolicyHead<B> {
     pub fn new(filters: usize) -> Self {
-        let conv1 = nn::conv::Conv2dConfig::new([filters, 72], [1, 1])
+        let conv1 = nn::conv::Conv2dConfig::new([filters, 8], [1, 1])
             .with_padding(Conv2dPaddingConfig::Valid)
             .with_bias(false)
             .init();
-        let bn1 = nn::BatchNormConfig::new(72).init();
-        let fc1 = nn::LinearConfig::new(72 * 8 * 8, 4608).init();
+        let bn1 = nn::BatchNormConfig::new(8).init();
+        let fc1 = nn::LinearConfig::new(8 * 8 * 8, 4608).init();
 
         Self {
             conv1,
@@ -221,12 +221,12 @@ pub struct ValueHead<B: Backend> {
 
 impl<B: Backend> ValueHead<B> {
     pub fn new(filters: usize) -> Self {
-        let conv1 = nn::conv::Conv2dConfig::new([filters, 32], [1, 1])
+        let conv1 = nn::conv::Conv2dConfig::new([filters, 4], [1, 1])
             .with_padding(Conv2dPaddingConfig::Valid)
             .with_bias(false)
             .init();
-        let bn1 = nn::BatchNormConfig::new(32).init();
-        let fc1 = nn::LinearConfig::new(32 * 8 * 8, 256).init();
+        let bn1 = nn::BatchNormConfig::new(4).init();
+        let fc1 = nn::LinearConfig::new(4 * 8 * 8, 256).init();
         let fc2 = nn::LinearConfig::new(256, 1).init();
 
         Self {
@@ -263,8 +263,8 @@ pub struct SqueezeExcitationBlock<B: Backend> {
 
 impl<B: Backend> SqueezeExcitationBlock<B> {
     pub fn new(filters: usize, reduction_ratio: usize) -> Self {
-        let fc1 = nn::LinearConfig::new(filters, filters / reduction_ratio).init();
-        let fc2 = nn::LinearConfig::new(filters / reduction_ratio, filters).init();
+        let fc1 = nn::LinearConfig::new(filters, filters / reduction_ratio).with_bias(false).init();
+        let fc2 = nn::LinearConfig::new(filters / reduction_ratio, filters).with_bias(false).init();
 
         Self {
             fc1,

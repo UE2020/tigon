@@ -41,9 +41,9 @@ fn main() -> Result<(), PlayError<Chess>> {
         "Current working directory: {}",
         std::env::current_dir().unwrap().display()
     );
-    eprintln!("Loading neural network (64x5)");
+    eprintln!("Loading neural network (96x8)");
 
-    let model: nn::Model<InferenceBackend> = nn::Model::new(5, 64);
+    let model: nn::Model<InferenceBackend> = nn::Model::new(8, 96);
     let record = nn::burn::record::NoStdTrainingRecorder::default()
         .load("/home/tt/Documents/tigon/weights/model.bin".into())
         .expect("Failed to decode state");
