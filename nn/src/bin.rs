@@ -75,10 +75,10 @@ pub fn run<B: ADBackend>(device: B::Device) {
 
     // Model
     let learner = LearnerBuilder::new(ARTIFACT_DIR)
-        .metric_train_plot(AccuracyMetric::new())
-        .metric_valid_plot(AccuracyMetric::new())
-        .metric_train_plot(LossMetric::new())
-        .metric_valid_plot(LossMetric::new())
+        //.metric_train_plot(AccuracyMetric::new())
+        //.metric_valid_plot(AccuracyMetric::new())
+        //.metric_train_plot(LossMetric::new())
+        //.metric_valid_plot(LossMetric::new())
         .with_file_checkpointer(1, NoStdTrainingRecorder::new())
         .devices(vec![device])
         .num_epochs(config.num_epochs)
