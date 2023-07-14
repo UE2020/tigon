@@ -8,7 +8,7 @@ use burn::{
     },
     tensor::{
         backend::{ADBackend, Backend},
-        Int, Tensor,
+        Int, Tensor, activation::sigmoid,
     },
     train::{
         metric::{AccuracyInput, Adaptor, LossInput},
@@ -30,7 +30,7 @@ fn global_data() -> &'static Mutex<Writer> {
     static INSTANCE: OnceCell<Mutex<Writer>> = OnceCell::new();
     INSTANCE.get_or_init(|| {
         Mutex::new(Writer(
-            tensorboard::summary_writer::SummaryWriter::new("logdir/burn-T1"),
+            tensorboard::summary_writer::SummaryWriter::new("logdir/burn-T3-64x5"),
             0,
         ))
     })
@@ -96,6 +96,8 @@ pub struct ResidualBlock<B: Backend> {
     conv2: nn::conv::Conv2d<B>,
     bn2: BatchNorm<B, 2>,
     activation: nn::ReLU,
+
+    se: SqueezeExcitationBlock<B>,
 }
 
 impl<B: Backend> ResidualBlock<B> {
@@ -118,6 +120,7 @@ impl<B: Backend> ResidualBlock<B> {
             conv2,
             bn2,
             activation: nn::ReLU::new(),
+            se: SqueezeExcitationBlock::new(filters, 2)
         }
     }
 
@@ -129,6 +132,9 @@ impl<B: Backend> ResidualBlock<B> {
 
         let x = self.conv2.forward(x);
         let x = self.bn2.forward(x);
+    
+        let x = self.se.forward(x);
+
         let x = x.add(residual);
         let x = self.activation.forward(x);
 
@@ -242,6 +248,45 @@ impl<B: Backend> ValueHead<B> {
         let x = self.activation.forward(x);
         let x = self.fc2.forward(x);
         let x = x.tanh();
+
+        x
+    }
+}
+
+#[derive(Module, Debug)]
+pub struct SqueezeExcitationBlock<B: Backend> {
+    fc1: nn::Linear<B>,
+    fc2: nn::Linear<B>,
+
+    activation: nn::ReLU,
+}
+
+impl<B: Backend> SqueezeExcitationBlock<B> {
+    pub fn new(filters: usize, reduction_ratio: usize) -> Self {
+        let fc1 = nn::LinearConfig::new(filters, filters / reduction_ratio).init();
+        let fc2 = nn::LinearConfig::new(filters / reduction_ratio, filters).init();
+
+        Self {
+            fc1,
+            fc2,
+            activation: nn::ReLU::new(),
+        }
+    }
+
+    pub fn forward(&self, input: Tensor<B, 4>) -> Tensor<B, 4> {
+        let [batch_size, planes, w, h] = input.dims();
+
+        // global avg pool
+        let x = input.clone().reshape([batch_size, planes, w * h]);
+        let x = x.mean_dim(2);
+        let x = x.reshape([batch_size, planes]);
+
+        let x = self.fc1.forward(x);
+        let x = self.activation.forward(x);
+        let x = self.fc2.forward(x);
+        let x = sigmoid(x);
+        let x = x.reshape([batch_size, planes, 1, 1]);
+        let x = x.mul(input);
 
         x
     }

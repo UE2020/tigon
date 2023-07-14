@@ -39,8 +39,8 @@ pub struct AlphaZeroTrainerConfig {
 
 pub fn run<B: ADBackend>(device: B::Device) {
     // Config
-    let config_optimizer = SgdConfig::new().with_momentum(Some(MomentumConfig::new().with_nesterov(true).with_momentum(0.9))).with_weight_decay(Some(WeightDecayConfig::new(1e-4)));
-    //let config_optimizer = AdamConfig::new().with_epsilon(1e-5); // with_epsilon(1e-8).with_weight_decay(Some(WeightDecayConfig::new(1e-4)));
+    let config_optimizer = SgdConfig::new().with_momentum(Some(MomentumConfig::new().with_nesterov(true).with_momentum(0.9))).with_weight_decay(None);
+    //let config_optimizer = AdamConfig::new(); // with_epsilon(1e-8).with_weight_decay(Some(WeightDecayConfig::new(1e-4)));
     let config = AlphaZeroTrainerConfig::new(config_optimizer);
     B::seed(config.seed);
 
@@ -82,7 +82,7 @@ pub fn run<B: ADBackend>(device: B::Device) {
         .with_file_checkpointer(1, NoStdTrainingRecorder::new())
         .devices(vec![device])
         .num_epochs(config.num_epochs)
-        .build(Model::new(10, 128), config.optimizer.init(), AlphaZeroLR::new(0.1, 80000));
+        .build(Model::new(8, 96), config.optimizer.init(), AlphaZeroLR::new(1e-1, 80000));
 
     let model_trained = learner.fit(dataloader_train, dataloader_test);
 
