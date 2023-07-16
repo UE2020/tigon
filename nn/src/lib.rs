@@ -1,5 +1,3 @@
-#![feature(iter_array_chunks)]
-
 pub mod batch;
 pub mod model;
 
