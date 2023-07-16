@@ -1,7 +1,7 @@
 use std::sync::Mutex;
 
 use burn::module::Module;
-use burn::optim::{*, decay::WeightDecayConfig, momentum::MomentumConfig};
+use burn::optim::{decay::WeightDecayConfig, momentum::MomentumConfig, *};
 use burn::record::{NoStdTrainingRecorder, Recorder};
 use burn::{
     config::Config,
@@ -26,21 +26,21 @@ pub struct AlphaZeroTrainerConfig {
     #[config(default = 255)]
     pub num_epochs: usize,
 
-    #[config(default = 1024)]
+    #[config(default = 256)]
     pub batch_size: usize,
 
-    //#[config(default = 4)]
-    //pub num_workers: usize,
     #[config(default = 42)]
     pub seed: u64,
 
     pub optimizer: AdamConfig,
+
+    #[config(default = 1e-3)]
+	pub lr: f64
 }
 
 pub fn run<B: ADBackend>(device: B::Device) {
     // Config
-    //let config_optimizer = SgdConfig::new().with_momentum(Some(MomentumConfig::new().with_nesterov(true).with_momentum(0.9))).with_weight_decay(Some(WeightDecayConfig::new(1e-4)));
-    let config_optimizer = AdamConfig::new().with_epsilon(1e-8).with_weight_decay(Some(WeightDecayConfig::new(1e-4)));
+    let config_optimizer = AdamConfig::new();
     let config = AlphaZeroTrainerConfig::new(config_optimizer);
     B::seed(config.seed);
 
@@ -57,8 +57,8 @@ pub fn run<B: ADBackend>(device: B::Device) {
                 std::fs::File::open("nn/data/lichess_elite_2021-11.pgn")
                     .expect("training data not found"),
             ),
+            1_000_000 * 80,
             10_000_000,
-            1_000_000,
         ))));
     let dataloader_test = DataLoaderBuilder::new(batcher_valid)
         .batch_size(config.batch_size)
@@ -69,20 +69,24 @@ pub fn run<B: ADBackend>(device: B::Device) {
                 std::fs::File::open("nn/data/lichess_elite_2021-11.pgn")
                     .expect("training data not found"),
             ),
-            100000,
-            100000,
+            200000,
+            200000,
         ))));
 
     // Model
     let learner = LearnerBuilder::new(ARTIFACT_DIR)
-        //.metric_train_plot(AccuracyMetric::new())
-        //.metric_valid_plot(AccuracyMetric::new())
-        //.metric_train_plot(LossMetric::new())
-        //.metric_valid_plot(LossMetric::new())
+        // .metric_train_plot(AccuracyMetric::new())
+        // .metric_valid_plot(AccuracyMetric::new())
+        // .metric_train_plot(LossMetric::new())
+        // .metric_valid_plot(LossMetric::new())
         .with_file_checkpointer(1, NoStdTrainingRecorder::new())
         .devices(vec![device])
         .num_epochs(config.num_epochs)
-        .build(Model::new(7, 128), config.optimizer.init(), AlphaZeroLR::new(1e-3, 40000));
+        .build(
+            Model::new(5, 64),
+            config.optimizer.init(),
+            AlphaZeroLR::new(config.lr, 80000),
+        );
 
     let model_trained = learner.fit(dataloader_train, dataloader_test);
 

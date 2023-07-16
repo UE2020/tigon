@@ -1,8 +1,5 @@
 use burn::{
-    data::{
-        dataloader::batcher::Batcher,
-        dataset::{Dataset},
-    },
+    data::{dataloader::batcher::Batcher, dataset::Dataset},
     tensor::{backend::Backend, Data, ElementConversion, Int, Shape, Tensor},
 };
 
@@ -139,7 +136,7 @@ pub struct PositionBatcher<B: Backend> {
 #[derive(Clone, Debug)]
 pub struct PositionBatch<B: Backend> {
     pub positions: Tensor<B, 4>,
-    pub value_targets: Tensor<B, 2>,
+    pub value_targets: Tensor<B, 1, Int>,
     pub policy_targets: Tensor<B, 1, Int>,
     pub policy_masks: Tensor<B, 2>,
 }
@@ -186,14 +183,29 @@ impl<B: Backend> Batcher<PositionItem, PositionBatch<B>> for PositionBatcher<B> 
         let value_targets = items
             .iter()
             .map(|(pos, outcome, _)| {
-                Data::<f32, 2>::from([[match outcome {
-                    Outcome::Draw => 0.0,
-                    Outcome::Decisive { winner } => {
-                        turn_to_side(*winner) as f32 * turn_to_side(pos.turn()) as f32
-                    }
-                }]])
+                Tensor::<B, 1, Int>::from_data(
+                    Data::from([match outcome {
+                        Outcome::Draw => 1,
+                        Outcome::Decisive { winner } => match winner {
+                            Color::White => {
+                                if pos.turn() == Color::White {
+                                    0
+                                } else {
+                                    2
+                                }
+                            }
+                            Color::Black => {
+                                if pos.turn() == Color::White {
+                                    2
+                                } else {
+                                    0
+                                }
+                            }
+                        },
+                    }])
+                    .convert(),
+                )
             })
-            .map(|data| Tensor::<B, 2>::from_data(data.convert()))
             .collect();
 
         let positions = Tensor::cat(positions, 0).to_device(&self.device);

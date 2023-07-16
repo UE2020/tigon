@@ -3,12 +3,13 @@ use burn::{
     nn::{
         self,
         conv::Conv2dPaddingConfig,
-        loss::{CrossEntropyLoss, MSELoss},
+        loss::{CrossEntropyLoss},
         BatchNorm,
     },
     tensor::{
+        activation::sigmoid,
         backend::{ADBackend, Backend},
-        Int, Tensor, activation::sigmoid,
+        Int, Tensor,
     },
     train::{
         metric::{AccuracyInput, Adaptor, LossInput},
@@ -22,7 +23,11 @@ use tensorboard_rs as tensorboard;
 
 use once_cell::sync::OnceCell;
 
-pub struct Writer(tensorboard::summary_writer::SummaryWriter, usize);
+pub struct Writer(
+    tensorboard::summary_writer::SummaryWriter,
+    tensorboard::summary_writer::SummaryWriter,
+    usize,
+);
 
 unsafe impl Sync for Writer {}
 
@@ -30,7 +35,8 @@ fn global_data() -> &'static Mutex<Writer> {
     static INSTANCE: OnceCell<Mutex<Writer>> = OnceCell::new();
     INSTANCE.get_or_init(|| {
         Mutex::new(Writer(
-            tensorboard::summary_writer::SummaryWriter::new("logdir/burn-T3-64x5"),
+            tensorboard::summary_writer::SummaryWriter::new("logdir/train"),
+            tensorboard::summary_writer::SummaryWriter::new("logdir/test"),
             0,
         ))
     })
@@ -72,12 +78,7 @@ impl<B: Backend> Model<B> {
         let (value_output, policy_output) = self.forward(item.positions, item.policy_masks);
         let cross_entropy = CrossEntropyLoss::new(None);
         let policy_loss = cross_entropy.forward(policy_output.clone(), policy_targets.clone());
-        let mse = MSELoss::new();
-        let value_loss = mse.forward(
-            value_output.clone(),
-            value_targets,
-            nn::loss::Reduction::Mean,
-        );
+        let value_loss = cross_entropy.forward(value_output.clone(), value_targets.clone());
 
         AlphaZeroOutput {
             policy_loss,
@@ -85,6 +86,7 @@ impl<B: Backend> Model<B> {
             policy: policy_output,
             value: value_output,
             policy_targets,
+			value_targets,
         }
     }
 }
@@ -120,7 +122,7 @@ impl<B: Backend> ResidualBlock<B> {
             conv2,
             bn2,
             activation: nn::ReLU::new(),
-            se: SqueezeExcitationBlock::new(filters, 2)
+            se: SqueezeExcitationBlock::new(filters, 2),
         }
     }
 
@@ -132,7 +134,7 @@ impl<B: Backend> ResidualBlock<B> {
 
         let x = self.conv2.forward(x);
         let x = self.bn2.forward(x);
-    
+
         let x = self.se.forward(x);
 
         let x = x.add(residual);
@@ -227,7 +229,7 @@ impl<B: Backend> ValueHead<B> {
             .init();
         let bn1 = nn::BatchNormConfig::new(4).init();
         let fc1 = nn::LinearConfig::new(4 * 8 * 8, 256).init();
-        let fc2 = nn::LinearConfig::new(256, 1).init();
+        let fc2 = nn::LinearConfig::new(256, 3).init();
 
         Self {
             conv1,
@@ -247,7 +249,6 @@ impl<B: Backend> ValueHead<B> {
         let x = self.fc1.forward(x);
         let x = self.activation.forward(x);
         let x = self.fc2.forward(x);
-        let x = x.tanh();
 
         x
     }
@@ -263,8 +264,12 @@ pub struct SqueezeExcitationBlock<B: Backend> {
 
 impl<B: Backend> SqueezeExcitationBlock<B> {
     pub fn new(filters: usize, reduction_ratio: usize) -> Self {
-        let fc1 = nn::LinearConfig::new(filters, filters / reduction_ratio).with_bias(false).init();
-        let fc2 = nn::LinearConfig::new(filters / reduction_ratio, filters).with_bias(false).init();
+        let fc1 = nn::LinearConfig::new(filters, filters / reduction_ratio)
+            .with_bias(false)
+            .init();
+        let fc2 = nn::LinearConfig::new(filters / reduction_ratio, filters)
+            .with_bias(false)
+            .init();
 
         Self {
             fc1,
@@ -300,11 +305,12 @@ pub struct AlphaZeroOutput<B: Backend> {
     pub value: Tensor<B, 2>,
 
     pub policy_targets: Tensor<B, 1, Int>,
+	pub value_targets: Tensor<B, 1, Int>,
 }
 
 impl<B: Backend> Adaptor<AccuracyInput<B>> for AlphaZeroOutput<B> {
     fn adapt(&self) -> AccuracyInput<B> {
-        AccuracyInput::new(self.policy.clone(), self.policy_targets.clone())
+        AccuracyInput::new(self.value.clone(), self.value_targets.clone())
     }
 }
 
@@ -320,7 +326,7 @@ impl<B: ADBackend> TrainStep<PositionBatch<B>, AlphaZeroOutput<B>> for Model<B> 
     fn step(&self, item: PositionBatch<B>) -> TrainOutput<AlphaZeroOutput<B>> {
         let item = self.forward_output(item);
         let mut writer = global_data().lock().unwrap();
-        let step = writer.1;
+        let step = writer.2;
         writer.0.add_scalar(
             "Value loss",
             (item.value_loss.clone()).into_data().value[0]
@@ -345,11 +351,11 @@ impl<B: ADBackend> TrainStep<PositionBatch<B>, AlphaZeroOutput<B>> for Model<B> 
                     .unwrap(),
             step,
         );
-        writer.1 += 1;
+        writer.2 += 1;
 
         TrainOutput::new(
             self,
-            ((item.value_loss.clone() * 0.01) + item.policy_loss.clone()).backward(),
+            (item.value_loss.clone() + item.policy_loss.clone()).backward(),
             item,
         )
     }
@@ -357,6 +363,36 @@ impl<B: ADBackend> TrainStep<PositionBatch<B>, AlphaZeroOutput<B>> for Model<B> 
 
 impl<B: Backend> ValidStep<PositionBatch<B>, AlphaZeroOutput<B>> for Model<B> {
     fn step(&self, item: PositionBatch<B>) -> AlphaZeroOutput<B> {
-        self.forward_output(item)
+        let out = self.forward_output(item);
+
+        let mut writer = global_data().lock().unwrap();
+        let step = writer.2;
+        writer.1.add_scalar(
+            "Value loss",
+            (out.value_loss.clone()).into_data().value[0]
+                .to_f32()
+                .unwrap(),
+            step,
+        );
+        writer.1.add_scalar(
+            "Policy loss",
+            (out.policy_loss.clone()).into_data().value[0]
+                .to_f32()
+                .unwrap(),
+            step,
+        );
+        writer.1.add_scalar(
+            "Training loss",
+            (out.policy_loss.clone()).into_data().value[0]
+                .to_f32()
+                .unwrap()
+                + (out.value_loss.clone()).into_data().value[0]
+                    .to_f32()
+                    .unwrap(),
+            step,
+        );
+        writer.2 += 1;
+
+        out
     }
 }

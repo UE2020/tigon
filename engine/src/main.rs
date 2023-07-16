@@ -41,9 +41,9 @@ fn main() -> Result<(), PlayError<Chess>> {
         "Current working directory: {}",
         std::env::current_dir().unwrap().display()
     );
-    eprintln!("Loading neural network (96x8)");
+    eprintln!("Loading neural network (64x5)");
 
-    let model: nn::Model<InferenceBackend> = nn::Model::new(8, 96);
+    let model: nn::Model<InferenceBackend> = nn::Model::new(5, 64);
     let record = nn::burn::record::NoStdTrainingRecorder::default()
         .load("/home/tt/Documents/tigon/weights/model.bin".into())
         .expect("Failed to decode state");
@@ -79,7 +79,7 @@ fn main() -> Result<(), PlayError<Chess>> {
 
             let (value_logits, policy_logits) = model.forward(tensor, policy_mask);
             let policy = softmax(policy_logits.reshape([4608]), 0).into_data();
-            let value = value_logits.into_data().value;
+			let value = softmax(value_logits.reshape([3]), 0).into_data().value;
             let mut move_probabilities = Vec::new();
             let movegen = pos.legal_moves();
             for mov in movegen {
@@ -96,7 +96,7 @@ fn main() -> Result<(), PlayError<Chess>> {
                 move_probabilities.push((mov, policy.value[mov_idx as usize]));
             }
             (
-                value[0],
+                value[0] - value[2],
                 move_probabilities
                     .into_iter()
                     .map(|(mov, prior)| {
