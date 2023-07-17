@@ -79,7 +79,7 @@ fn main() -> Result<(), PlayError<Chess>> {
 
             let (value_logits, policy_logits) = model.forward(tensor, policy_mask);
             let policy = softmax(policy_logits.reshape([4608]), 0).into_data();
-			let value = softmax(value_logits.reshape([3]), 0).into_data().value;
+            let value = softmax(value_logits.reshape([3]), 0).into_data().value;
             let mut move_probabilities = Vec::new();
             let movegen = pos.legal_moves();
             for mov in movegen {

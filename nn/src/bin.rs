@@ -19,28 +19,29 @@ use pgn_reader::BufferedReader;
 
 mod lr;
 
-static ARTIFACT_DIR: &str = "/tmp/alphazero-checkpoints";
+const ARTIFACT_DIR: &str = "./training-checkpoints";
 
 #[derive(Config)]
 pub struct AlphaZeroTrainerConfig {
     #[config(default = 255)]
     pub num_epochs: usize,
 
-    #[config(default = 256)]
+    #[config(default = 2048)]
     pub batch_size: usize,
 
     #[config(default = 42)]
     pub seed: u64,
 
-    pub optimizer: AdamConfig,
-
-    #[config(default = 1e-3)]
-	pub lr: f64
+    pub optimizer: SgdConfig,
 }
 
 pub fn run<B: ADBackend>(device: B::Device) {
     // Config
-    let config_optimizer = AdamConfig::new();
+    let config_optimizer = SgdConfig::new()
+        .with_momentum(Some(
+            MomentumConfig::new().with_momentum(0.9).with_nesterov(true),
+        ))
+        .with_weight_decay(Some(WeightDecayConfig::new(0.5 * (0.0001))));
     let config = AlphaZeroTrainerConfig::new(config_optimizer);
     B::seed(config.seed);
 
@@ -75,17 +76,20 @@ pub fn run<B: ADBackend>(device: B::Device) {
 
     // Model
     let learner = LearnerBuilder::new(ARTIFACT_DIR)
-        // .metric_train_plot(AccuracyMetric::new())
-        // .metric_valid_plot(AccuracyMetric::new())
-        // .metric_train_plot(LossMetric::new())
-        // .metric_valid_plot(LossMetric::new())
-        .with_file_checkpointer(1, NoStdTrainingRecorder::new())
+        //.metric_train_plot(AccuracyMetric::new())
+        //.metric_valid_plot(AccuracyMetric::new())
+        //.metric_train_plot(LossMetric::new())
+        //.metric_valid_plot(LossMetric::new())
+        .with_file_checkpointer(2, NoStdTrainingRecorder::new())
         .devices(vec![device])
         .num_epochs(config.num_epochs)
         .build(
-            Model::new(5, 64),
+            Model::new(6, 64),
             config.optimizer.init(),
-            AlphaZeroLR::new(config.lr, 80000),
+            AlphaZeroLR::new(
+                &[(0.02, 100000), (0.002, 130000), (0.0005, usize::MAX)],
+                250,
+            ),
         );
 
     let model_trained = learner.fit(dataloader_train, dataloader_test);

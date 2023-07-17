@@ -223,12 +223,12 @@ pub struct ValueHead<B: Backend> {
 
 impl<B: Backend> ValueHead<B> {
     pub fn new(filters: usize) -> Self {
-        let conv1 = nn::conv::Conv2dConfig::new([filters, 4], [1, 1])
+        let conv1 = nn::conv::Conv2dConfig::new([filters, 32], [1, 1])
             .with_padding(Conv2dPaddingConfig::Valid)
             .with_bias(false)
             .init();
-        let bn1 = nn::BatchNormConfig::new(4).init();
-        let fc1 = nn::LinearConfig::new(4 * 8 * 8, 256).init();
+        let bn1 = nn::BatchNormConfig::new(32).init();
+        let fc1 = nn::LinearConfig::new(32 * 8 * 8, 256).init();
         let fc2 = nn::LinearConfig::new(256, 3).init();
 
         Self {
@@ -310,7 +310,7 @@ pub struct AlphaZeroOutput<B: Backend> {
 
 impl<B: Backend> Adaptor<AccuracyInput<B>> for AlphaZeroOutput<B> {
     fn adapt(&self) -> AccuracyInput<B> {
-        AccuracyInput::new(self.value.clone(), self.value_targets.clone())
+        AccuracyInput::new(self.policy.clone(), self.policy_targets.clone())
     }
 }
 
