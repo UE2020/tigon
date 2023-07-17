@@ -328,14 +328,14 @@ impl<B: ADBackend> TrainStep<PositionBatch<B>, AlphaZeroOutput<B>> for Model<B> 
         let mut writer = global_data().lock().unwrap();
         let step = writer.2;
         writer.0.add_scalar(
-            "Value loss",
+            "Value Loss",
             (item.value_loss.clone()).into_data().value[0]
                 .to_f32()
                 .unwrap(),
             step,
         );
         writer.0.add_scalar(
-            "Policy loss",
+            "Policy Loss",
             (item.policy_loss.clone()).into_data().value[0]
                 .to_f32()
                 .unwrap(),
